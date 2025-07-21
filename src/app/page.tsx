@@ -6,15 +6,9 @@ import { Separator } from "@/components/ui/separator"
 import ExtractFields from "@/components/extract-fields"
 import JobManagement from "@/components/job-management"
 import { JobProvider } from "@/context/job-context"
-import { initializeDB } from "@/lib/db"
 
 export default function Home() {
   const [activeView, setActiveView] = useState("extract")
-
-  // Initialize the database when the component mounts
-  useState(() => {
-    initializeDB().catch(console.error)
-  })
 
   const getPageTitle = () => {
     switch (activeView) {

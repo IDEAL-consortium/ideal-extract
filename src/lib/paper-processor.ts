@@ -1,9 +1,8 @@
-"use client"
-
-import { getDB, STORES } from "./db"
-import type { Paper, Job } from "@/types"
+import { Job, Paper } from "@/types"
+import { getJob } from "./job-manager"
 import { extractFieldsWithAI } from "./openai-service"
 import { savePaper, getPapersByJobId } from "./paper-manager"
+import Papa from "papaparse"
 
 interface ProcessingCallbacks {
   onProgress: (processed: number) => void
@@ -20,35 +19,37 @@ let currentIndex = 0
 let callbacks: ProcessingCallbacks | null = null
 
 export const processPapers = {
-  parseCSV: async (csvData: string): Promise<Paper[]> => {
-    return new Promise((resolve) => {
-      const lines = csvData.split("\n")
-      const headers = lines[0].split(",").map((h) => h.trim())
-
-      const papers: Paper[] = []
-
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue
-
-        const values = lines[i].split(",").map((v) => v.trim())
-        const paper: any = {}
-
-        headers.forEach((header, index) => {
-          paper[header.toLowerCase()] = values[index] || ""
+  parseCSV: async (csvData: string): Promise<Omit<Paper, 'id' | 'jobId' | 'extractedData' | 'fullText'>[]> => {
+    try {
+      const results = await new Promise<Papa.ParseResult<any>>((resolve, reject) => {
+        Papa.parse(csvData, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => resolve(results),
+          error: (error: any) => reject(error),
         })
+      })
 
-        papers.push({
-          title: paper.title || "",
-          abstract: paper.abstract || "",
-          authors: paper.authors || "",
-          keywords: paper.keywords || "",
-          doi: paper.doi || "",
-          extracted: {},
-        })
+      // Validate required columns
+      const requiredColumns = ["title", "abstract", "authors", "doi"]
+      const missingColumns = requiredColumns.filter(
+        (col) => !(results.meta.fields && results.meta.fields.includes(col))
+      )
+      if (missingColumns.length > 0) {
+        throw new Error(`Missing required columns: ${missingColumns.join(", ")}`)
       }
 
-      resolve(papers)
-    })
+      const papers = (results.data as any[]).map((row) => ({
+        title: row.title || "",
+        abstract: row.abstract || "",
+        authors: row.authors || "",
+        doi: row.doi || "",
+      })) as Omit<Paper, 'id' | 'jobId' | 'extractedData' | 'fullText'>[]
+
+      return papers
+    } catch (error) {
+      throw error
+    }
   },
 
   startProcessing: async (jobId: number, papers: Paper[], processingCallbacks: ProcessingCallbacks) => {
@@ -98,7 +99,7 @@ export const processPapers = {
     // In a real app, you'd store the original CSV or papers list
 
     currentJobId = jobId
-    currentIndex = job.progress
+    currentIndex = processedPapers.length;
     callbacks = processingCallbacks
     isProcessing = true
     isPaused = false
@@ -120,25 +121,6 @@ export const processPapers = {
   },
 }
 
-async function getJob(id: number): Promise<Job | null> {
-  const db = await getDB()
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.JOBS], "readonly")
-    const store = transaction.objectStore(STORES.JOBS)
-
-    const request = store.get(id)
-
-    request.onsuccess = () => {
-      resolve(request.result || null)
-    }
-
-    request.onerror = () => {
-      reject(request.error)
-    }
-  })
-}
-
 async function processPaper(job: Job) {
   if (!isProcessing || isPaused || isCancelled || !currentJobId || !callbacks) {
     return
@@ -155,7 +137,7 @@ async function processPaper(job: Job) {
 
   try {
     // Extract fields using AI
-    const extractedFields = await extractFieldsWithAI(paper, job.fields, job.mode)
+    const extractedFields = await extractFieldsWithAI(paper, (job as any).fields, (job as any).mode)
 
     // Save the paper with extracted fields
     await savePaper({
