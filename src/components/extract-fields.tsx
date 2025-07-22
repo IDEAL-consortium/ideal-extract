@@ -9,13 +9,12 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { useJobContext } from "@/context/job-context"
 import { createJob } from "@/lib/job-manager"
 import { Plus, Trash2 } from "lucide-react"
 
 export default function ExtractFields() {
-  const { toast } = useToast()
   const { startJob } = useJobContext()
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract")
   const [file, setFile] = useState<File | null>(null)
@@ -29,11 +28,7 @@ export default function ExtractFields() {
       if (selectedFile.type === "text/csv" || selectedFile.name.endsWith(".csv")) {
         setFile(selectedFile)
       } else {
-        toast({
-          title: "Invalid file format",
-          description: "Please upload a CSV file",
-          variant: "destructive",
-        })
+          toast("Invalid file format. Please upload a CSV file.")
       }
     }
   }
@@ -56,11 +51,7 @@ export default function ExtractFields() {
     e.preventDefault()
 
     if (!file) {
-      toast({
-        title: "No file selected",
-        description: "Please upload a CSV file",
-        variant: "destructive",
-      })
+      toast("No file selected. Please upload a CSV file.")
       return
     }
 
@@ -94,20 +85,13 @@ export default function ExtractFields() {
           const csvData = event.target.result as string
           startJob(job.id, csvData)
 
-          toast({
-            title: "Job started",
-            description: "Your extraction job has been started",
-          })
+          toast("Job started. Your extraction job has been started.")
         }
       }
       reader.readAsText(file)
     } catch (error) {
       console.error("Error starting job:", error)
-      toast({
-        title: "Error",
-        description: "Failed to start extraction job",
-        variant: "destructive",
-      })
+      toast("Failed to start extraction job")
     }
   }
 
@@ -158,7 +142,7 @@ export default function ExtractFields() {
 
         <div className="space-y-2">
           <h4 className="text-sm font-medium">Default Fields</h4>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 cursor-pointer">
             <Checkbox
               id="design"
               checked={extractDesign}
@@ -166,7 +150,7 @@ export default function ExtractFields() {
             />
             <Label htmlFor="design">Design</Label>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 cursor-pointer">
             <Checkbox
               id="method"
               checked={extractMethod}
@@ -179,7 +163,7 @@ export default function ExtractFields() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium">Custom Fields (Yes/No Questions)</h4>
-            <Button type="button" variant="outline" size="sm" onClick={addCustomField}>
+            <Button type="button" variant="outline" size="sm" onClick={addCustomField} className="cursor-pointer">
               <Plus className="h-4 w-4 mr-1" /> Add Field
             </Button>
           </div>
@@ -212,7 +196,7 @@ export default function ExtractFields() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="mt-5"
+                className="mt-5 cursor-pointer"
                 onClick={() => removeCustomField(index)}
               >
                 <Trash2 className="h-4 w-4" />
@@ -222,7 +206,7 @@ export default function ExtractFields() {
         </div>
       </div>
 
-      <Button type="submit" className="w-full">
+      <Button type="submit" className="w-full cursor-pointer">
         Start Extraction
       </Button>
     </form>
