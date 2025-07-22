@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { useToast } from "@/hooks/use-toast"
 import { useJobContext } from "@/context/job-context"
 import { getAllJobs, getJob, deleteJob } from "@/lib/job-manager"
 import { downloadCSV } from "@/lib/csv-utils"
 import type { Job } from "@/types"
 import { Play, Pause, Download, Trash2 } from "lucide-react"
+import { toast } from "sonner"
+
 
 export default function JobManagement() {
-  const { toast } = useToast()
   const { activeJobId, pauseJob, resumeJob } = useJobContext()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,26 +39,15 @@ export default function JobManagement() {
     try {
       const job = await getJob(jobId)
       if (!job) {
-        toast({
-          title: "Error",
-          description: "Job not found",
-          variant: "destructive",
-        })
+        toast("Job not found")
         return
       }
 
       await downloadCSV(jobId)
-      toast({
-        title: "Success",
-        description: "Results downloaded successfully",
-      })
+      toast("Results downloaded successfully")
     } catch (error) {
       console.error("Error downloading results:", error)
-      toast({
-        title: "Error",
-        description: "Failed to download results",
-        variant: "destructive",
-      })
+      toast("Failed to download results")
     }
   }
 
@@ -66,17 +55,10 @@ export default function JobManagement() {
     try {
       await deleteJob(jobId)
       setJobs(jobs.filter((job) => job.id !== jobId))
-      toast({
-        title: "Success",
-        description: "Job deleted successfully",
-      })
+      toast("Job deleted successfully")
     } catch (error) {
       console.error("Error deleting job:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete job",
-        variant: "destructive",
-      })
+      toast("Failed to delete job")
     }
   }
 

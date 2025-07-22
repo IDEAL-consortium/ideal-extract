@@ -15,47 +15,10 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar"
+import routesMetadata from "@/app/routes-metadata"
 
-interface AppSidebarProps {
-  activeView: string
-  setActiveView: (view: string) => void
-}
 
-// Menu items
-const items = [
-  {
-    title: "Extract Fields",
-    url: "extract",
-    icon: FileText,
-    description: "Upload and extract fields from papers",
-  },
-  {
-    title: "Job Management",
-    url: "jobs",
-    icon: Settings,
-    description: "Manage extraction jobs and progress",
-  },
-]
-
-const tools = [
-  {
-    title: "PDF Download",
-    icon: Download,
-    description: "Download PDFs for full-text extraction",
-  },
-  {
-    title: "AI Processing",
-    icon: Brain,
-    description: "OpenAI-powered field extraction",
-  },
-  {
-    title: "Data Storage",
-    icon: Database,
-    description: "IndexedDB for local data persistence",
-  },
-]
-
-export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
+export function AppSidebar() {
   const { state } = useSidebar()
 
   return (
@@ -77,34 +40,16 @@ export function AppSidebar({ activeView, setActiveView }: AppSidebarProps) {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {routesMetadata.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={activeView === item.url}
                     tooltip={state === "collapsed" ? item.description : undefined}
                   >
-                    <button onClick={() => setActiveView(item.url)}>
+                    <a href={item.url}>
                       <item.icon />
                       <span>{item.title}</span>
-                      {activeView === item.url && <ChevronRight className="ml-auto h-4 w-4" />}
-                    </button>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Features</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {tools.map((tool) => (
-                <SidebarMenuItem key={tool.title}>
-                  <SidebarMenuButton tooltip={state === "collapsed" ? tool.description : undefined}>
-                    <tool.icon />
-                    <span>{tool.title}</span>
+                    </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
