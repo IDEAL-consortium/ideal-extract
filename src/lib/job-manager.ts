@@ -1,5 +1,3 @@
-"use client"
-
 import { Job } from "@/types";
 import { db } from "./db"
 
@@ -19,11 +17,4 @@ export async function updateJob(id: number, updates: Partial<Job>): Promise<Job>
 
 export async function getAllJobs(): Promise<Job[]> {
   return await db.jobs.orderBy("created").reverse().toArray();
-}
-
-export async function deleteJob(id: number): Promise<void> {
-  await db.transaction('rw', db.jobs, db.papers, async () => {
-    await db.papers.where('jobId').equals(id).delete();
-    await db.jobs.delete(id);
-  });
 }

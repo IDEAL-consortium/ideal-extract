@@ -1,5 +1,5 @@
-import { getPapersByJobId } from "./paper-manager";
 import { getJob } from "./job-manager";
+import { getBatchResults } from "./openai-service";
 import Papa from "papaparse";
 
 export async function downloadCSV(jobId: number): Promise<void> {
@@ -9,14 +9,21 @@ export async function downloadCSV(jobId: number): Promise<void> {
     throw new Error("Job not found");
   }
 
+  if (!job.batchId) {
+    throw new Error("Batch ID not found for this job");
+  }
+
   // Get all papers for this job
-  const papers = await getPapersByJobId(jobId);
-  if (papers.length === 0) {
+  const results = await getBatchResults(job.batchId);
+  if (results.length === 0) {
     throw new Error("No papers found for this job");
   }
 
   // Prepare data for papaparse
-  const data = papers.map((paper) => {
+  const data = results.map((result: any) => {
+    const paper = result.custom_id;
+    const extracted = result.response.body.choices[0].message.tool_calls[0].function.arguments;
+
     const row: { [key: string]: string | undefined } = {
       Title: paper.title,
       Abstract: paper.abstract,
@@ -26,15 +33,15 @@ export async function downloadCSV(jobId: number): Promise<void> {
     };
 
     if (job.fields.design) {
-      row["Design"] = paper.extracted.design || "";
+      row["Design"] = extracted.design || "";
     }
 
     if (job.fields.method) {
-      row["Method"] = paper.extracted.method || "";
+      row["Method"] = extracted.method || "";
     }
 
     job.fields.custom.forEach((field) => {
-      row[field.name] = paper.extracted[field.name] || "";
+      row[field.name] = extracted[field.name] || "";
     });
 
     return row;
