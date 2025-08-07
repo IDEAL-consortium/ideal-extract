@@ -88,7 +88,7 @@ export async function downloadCSV(jobId: number): Promise<void> {
     const paperId = index+1;
     const extracted = extractionMap.get(paperId)
     if (!extracted) {
-      console.warn(`No extraction result found for paper ID ${paperId}`);
+      // console.warn(`No extraction result found for paper ID ${paperId}`);
       return originalRow; // Return original row if no extraction result
     }
     // Start with the original row data
@@ -100,12 +100,18 @@ export async function downloadCSV(jobId: number): Promise<void> {
     }
 
     if (job.fields.method) {
-      mergedRow["Method"] = extracted.method || "";
+      mergedRow["Method"] = stringify(extracted.method || "");
+    }
+
+    if (job.fields.design 
+      || job.fields.method
+    ){
+      mergedRow["Flags"] = stringify(extracted.flags || "");
     }
 
     // Add custom fields
     job.fields.custom.forEach((field) => {
-      mergedRow[field.name] = extracted[nameToKey(field.name)] || "";
+      mergedRow[field.name] = stringify(extracted[nameToKey(field.name)] || "");
     });
 
     return mergedRow;
@@ -124,4 +130,20 @@ export async function downloadCSV(jobId: number): Promise<void> {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+
+const stringify = (data: any): string => {
+  // if string data, return as is
+  if (typeof data === "string") {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    // if array, convert each item to string
+    return data.map(item => stringify(item)).join(", ");
+  }
+  return Object.entries(data)
+    .filter(([key, value]) => !!value) // filter out empty values
+    .map(([key, value]) => `${key}`)
+    .join(", ");
 }
