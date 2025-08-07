@@ -6,6 +6,10 @@ export async function createJob(jobData: Omit<Job, "id">): Promise<Job> {
   return { id, ...jobData } as Job;
 }
 
+export async function deleteJob(id: number): Promise<void> {
+  await db.jobs.delete(id);
+}
+
 export async function getJob(id: number): Promise<Job | undefined> {
   return await db.jobs.get(id);
 }

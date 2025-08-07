@@ -43,6 +43,5 @@ export interface Paper {
   authors: string;
   keywords: string;
   doi: string;
-  extracted: ExtractedFields;
   fulltext?: string;
 }

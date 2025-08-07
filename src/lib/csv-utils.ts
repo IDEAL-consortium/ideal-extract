@@ -1,10 +1,12 @@
 import { getJob } from "./job-manager";
-import { getBatchResults } from "./openai-service";
+import { getBatchResults, nameToKey } from "./openai-service";
+import { getFilesByJobId } from "./files-manager";
 import Papa from "papaparse";
 
 export async function downloadCSV(jobId: number): Promise<void> {
   // Get job details
   const job = await getJob(jobId);
+  
   if (!job) {
     throw new Error("Job not found");
   }
@@ -13,42 +15,104 @@ export async function downloadCSV(jobId: number): Promise<void> {
     throw new Error("Batch ID not found for this job");
   }
 
-  // Get all papers for this job
+  // Get the original CSV file for this job
+  const files = await getFilesByJobId(jobId);
+  if (files.length === 0) {
+    throw new Error("No original CSV file found for this job");
+  }
+  
+  // Assume the first file is the CSV file
+  const originalFile = files[0];
+  const csvText = await originalFile.file.text();
+  
+  // Parse the original CSV to get the paper data
+  const originalCsvData = await new Promise<any[]>((resolve, reject) => {
+    Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        if (results.errors.length > 0) {
+          reject(new Error(`CSV parsing error: ${results.errors[0].message}`));
+        } else {
+          resolve(results.data);
+        }
+      },
+      error: (error: any) => reject(error)
+    });
+  });
+
+  // Get extraction results from OpenAI batch
   const results = await getBatchResults(job.batchId);
   if (results.length === 0) {
-    throw new Error("No papers found for this job");
+    throw new Error("No extraction results found for this job");
   }
 
-  // Prepare data for papaparse
-  const data = results.map((result: any) => {
-    const paper = result.custom_id;
-    const extracted = result.response.body.choices[0].message.tool_calls[0].function.arguments;
+  // Create a map of extraction results by paper ID
+  const extractionMap = new Map<number, any>();
+  
+  for (const result of results) {
+    // Extract paper ID from custom_id (format: "request-{paperId}")
+    const paperId = Number((result.custom_id as string).split("-").pop())
+    
+    // Extract the response content
+    const responseContent = result.response?.body?.choices || [];
+    let extracted: any = {};
+    
+    for (const choice of responseContent) {
+      if (choice.message?.role === "assistant") {
+        let content = choice.message?.content || "";
+        content = content.trim();
+        
+        // Remove markdown code block formatting
+        if (content.startsWith("```json")) {
+          content = content.substring(7).trim();
+        }
+        content = content.split("```")[0];
+        
+        try {
+          extracted = JSON.parse(content);
+          console.log("Extracted content for paper %s: %O", paperId, extracted);
+          break; // Use the first valid assistant response
+        } catch (error) {
+          console.error("Failed to parse JSON content:", content);
+        }
+      }
+    }
+    
+    extractionMap.set(paperId, extracted);
+  }
 
-    const row: { [key: string]: string | undefined } = {
-      Title: paper.title,
-      Abstract: paper.abstract,
-      Authors: paper.authors,
-      Keywords: paper.keywords,
-      DOI: paper.doi,
-    };
-
+  // Merge original CSV data with extraction results
+  const mergedData = originalCsvData.map((originalRow, index) => {
+    // Use the row index as paper ID (assuming papers were processed in order)
+    const paperId = index+1;
+    const extracted = extractionMap.get(paperId) || {};
+    if (!extracted) {
+      console.warn(`No extraction result found for paper ID ${paperId}`);
+      return originalRow; // Return original row if no extraction result
+    }
+    // Start with the original row data
+    const mergedRow = { ...originalRow };
+    
+    // Add extracted fields
     if (job.fields.design) {
-      row["Design"] = extracted.design || "";
+      mergedRow["Design"] = extracted.design || "";
     }
 
     if (job.fields.method) {
-      row["Method"] = extracted.method || "";
+      mergedRow["Method"] = extracted.method || "";
     }
 
+    // Add custom fields
     job.fields.custom.forEach((field) => {
-      row[field.name] = extracted[field.name] || "";
+      mergedRow[field.name] = extracted[nameToKey(field.name)] || "";
     });
 
-    return row;
+    return mergedRow;
   });
 
   // Create CSV content using papaparse
-  const csvContent = Papa.unparse(data);
+  const csvContent = Papa.unparse(mergedData);
 
   // Create and download the CSV file
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });

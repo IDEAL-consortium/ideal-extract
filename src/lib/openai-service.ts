@@ -1,7 +1,13 @@
 "use client";
 
-import { Paper, ExtractedFields } from "@/types";
+import { Paper, ExtractedFields, CustomField } from "@/types";
 import OpenAI from "openai";
+
+// Import prompt files
+import basePrompt from "@/components/prompts/base-prompt.md?raw";
+import designPrompt from "@/components/prompts/design-prompt.md?raw";
+import methodPrompt from "@/components/prompts/method-prompt.md?raw";
+import flagsPrompt from "@/components/prompts/flags-prompt.md?raw";
 
 // Function to get OpenAI client with API key from localStorage
 function getOpenAIClient(): OpenAI {
@@ -9,7 +15,7 @@ function getOpenAIClient(): OpenAI {
   if (!apiKey) {
     throw new Error('OpenAI API key not found. Please set it in Settings.');
   }
-  
+
   return new OpenAI({
     apiKey: apiKey,
     dangerouslyAllowBrowser: true,
@@ -21,30 +27,38 @@ export async function createBatch(
   fields: {
     design: boolean;
     method: boolean;
-    custom: Array<{ name: string; instruction: string }>;
+    custom: Array<CustomField>;
   }
 ) {
   const openai = getOpenAIClient();
-  
-  const requests = papers.map((paper, index) => {
-    const prompt = createPrompt(paper, fields);
+
+  const requests = papers.map((paper) => {
+    const systemPrompt = createSystemPrompt(fields);
+    const userPrompt = createUserPrompt(paper);
     return {
-      custom_id: `request-${index}`,
+      custom_id: `request-${paper.id}`,
       method: "POST",
       url: "/v1/chat/completions",
       body: {
-        model: "gpt-4-turbo",
+        model: "gpt-4.1",
         messages: [
           {
             role: "system",
-            content: "You are a helpful assistant that extracts information from research papers.",
+            content: systemPrompt,
           },
           {
             role: "user",
-            content: prompt,
+            content: userPrompt,
           },
         ],
         response_format: { type: "json_object" },
+        "temperature": 1,
+        "max_completion_tokens": 300,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+        "top_logprobs": 4,
+        "logprobs": true
       },
     };
   });
@@ -84,32 +98,47 @@ export async function getBatchResults(batchId: string) {
   return [];
 }
 
-function createPrompt(
-  paper: Paper,
+function createUserPrompt(paper: Paper): string {
+  return `Paper Title: ${paper.title}\n\n` +
+    `Paper Abstract: ${paper.abstract}\n\n` +
+    `Paper Authors: ${paper.authors}\n\n` +
+    `Paper Keywords: ${paper.keywords}\n\n` +
+    `Paper DOI: ${paper.doi}\n\n` +
+    `Paper Fulltext: ${paper.fulltext || "Fulltext not available"}\n\n`
+}
+function createSystemPrompt(
   fields: {
     design: boolean;
     method: boolean;
     custom: Array<{ name: string; instruction: string }>;
   }
 ): string {
-  let prompt = `Paper Title: ${paper.title}\n\nAbstract: ${paper.abstract}\n\n`;
+  // Start with the base prompt
+  let prompt = basePrompt + "\n\n";
+
   prompt += "Please extract the following fields from the paper in JSON format:\n";
 
-  const extractionFields: { [key: string]: string } = {};
-
-  if (fields.design) {
-    extractionFields.design = "The study design (e.g., Randomized Controlled Trial, Cohort Study).";
+  const keys = ["design", "method", "flags"];
+  for (const field of fields.custom) {
+    keys.push(nameToKey(field.name));
   }
+  prompt += designPrompt
+  prompt += methodPrompt;
+  prompt += flagsPrompt;
 
-  if (fields.method) {
-    extractionFields.method = "The research method (e.g., Qualitative Analysis, Survey).";
+  if (fields.custom && fields.custom.length > 0) {
+    prompt += "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
+
+    fields.custom.forEach((field) => {
+      prompt += `Field Key : ${nameToKey(field.name)}:\n Instruction: ${field.instruction}\n\n`;
+    });
+    prompt += "Output should be a JSON object with the following keys and nothing else:\n";
   }
-
-  fields.custom.forEach((field) => {
-    extractionFields[field.name] = field.instruction;
-  });
-
-  prompt += JSON.stringify(extractionFields, null, 2);
+  prompt += keys.map((key) => `- ${key}`).join("\n") + "\n\n";
 
   return prompt;
+}
+
+export function nameToKey(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, "_");
 }

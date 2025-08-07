@@ -1,9 +1,9 @@
-import { Job } from '@/types';
+import { Job, JobFile } from '@/types';
 import Dexie, { Table } from 'dexie';
 
 class IdealExtractDB extends Dexie {
   jobs!: Table<Job>;
-  files!: Table<{ id: number; jobId: number; filename: string; file: Blob }>;
+  files!: Table<JobFile>;
   
   constructor() {
     super('ideal-extract-db');

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { getAllJobs, getJob } from "@/lib/job-manager";
+import { deleteJob, getAllJobs, getJob } from "@/lib/job-manager";
 import { downloadCSV } from "@/lib/csv-utils";
 import { processBatch } from "@/lib/batch-processor";
 import type { Job } from "@/types";
@@ -62,7 +62,7 @@ export default function JobManagement() {
 
   const handleDeleteJob = async (jobId: number) => {
     try {
-      // await deleteJob(jobId);
+      await deleteJob(jobId);
       setJobs(jobs.filter((job) => job.id !== jobId));
       toast("Job deleted successfully");
     } catch (error) {

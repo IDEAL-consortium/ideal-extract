@@ -15,6 +15,7 @@ import { Plus, Trash2 } from "lucide-react";
 import Papa from "papaparse";
 import { useState } from "react";
 import { toast } from "sonner";
+import { addFile } from "@/lib/files-manager";
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
@@ -115,18 +116,7 @@ export default function ExtractFields() {
           instruction: field.instruction,
         })),
       };
-
       // Create and start the job
-      const job = await createJob({
-        filename: file.name,
-        mode,
-        fields,
-        status: "in_progress",
-        progress: 0,
-        total: 0,
-        created: new Date(),
-        updated: new Date(),
-      });
 
       // Process the CSV file
       const reader = new FileReader();
@@ -144,7 +134,7 @@ export default function ExtractFields() {
             }
           );
 
-          const papers = (results.data as any[]).map((row) => {
+          const papers = (results.data as any[]).map((row, index) => {
             // Create a case-insensitive mapping of the row data
             const normalizedRow: { [key: string]: string } = {};
             Object.keys(row).forEach(key => {
@@ -152,17 +142,26 @@ export default function ExtractFields() {
             });
 
             return {
+              id: index+1, // Simple ID generation based on index
               title: normalizedRow.title || "",
               abstract: normalizedRow.abstract || "",
               authors: normalizedRow.authors || "",
               doi: normalizedRow.doi || "",
               keywords: normalizedRow.keywords || "",
-              fulltext: "",
-              extracted: {}
             };
           }) as Paper[];
-
-          await processBatch.start(job.id, papers);
+          const job = await createJob({
+            filename: file.name,
+            mode,
+            fields,
+            status: "in_progress",
+            progress: 0,
+            total: 0,
+            created: new Date(),
+            updated: new Date(),
+          });
+          await addFile(job.id, file, file.name);
+          await processBatch.start(job.id, papers.splice(0, 10)); // Process first 10 papers
 
           toast("Job started. Your extraction job has been started.");
         }

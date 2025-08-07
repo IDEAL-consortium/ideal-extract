@@ -2,12 +2,11 @@ import { JobFile } from "@/types";
 import { db } from "./db";
 
 export async function addFile(jobId: number, file: Blob, filename: string): Promise<JobFile> {
-    const jobFile: JobFile = {
-        id: 0, // Dexie will auto-increment this
+    const jobFile = {
         jobId,
         filename,
         file,
-    };
+    } as JobFile;
 
     const id = await db.files.add(jobFile);
     return { ...jobFile, id };
