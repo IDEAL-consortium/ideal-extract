@@ -21,6 +21,12 @@ const routesMetadata = [
     url: "/#/download",
     description: "Download PDFs for full-text extraction",
   },
+  {
+    title: "Settings",
+    url: "/#/settings",
+    icon: Settings,
+    description: "Configure application settings",
+  },
 ]
 
 export default routesMetadata

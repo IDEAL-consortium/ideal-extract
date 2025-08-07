@@ -1,88 +1,162 @@
-"use client"
+"use client";
 
-import type { Paper, ExtractedFields } from "@/types"
+import { Paper, ExtractedFields, CustomField } from "@/types";
+import OpenAI from "openai";
 
-// This is a mock implementation since we can't actually call OpenAI's API from the client
-// In a real application, you would use a server action or API route to call OpenAI
-export async function extractFieldsWithAI(
-  paper: Paper,
-  fields: { design: boolean; method: boolean; custom: Array<{ name: string; instruction: string }> },
-  mode: "fulltext" | "abstract",
-): Promise<ExtractedFields> {
-  // Simulate API call delay
-  await new Promise((resolve) => setTimeout(resolve, 1000))
+// Import prompt files
+import basePrompt from "@/components/prompts/base-prompt.md?raw";
+import designPrompt from "@/components/prompts/design-prompt.md?raw";
+import methodPrompt from "@/components/prompts/method-prompt.md?raw";
+import flagsPrompt from "@/components/prompts/flags-prompt.md?raw";
 
-  const extractedFields: ExtractedFields = {}
+// Function to get OpenAI client with API key from localStorage
+let openAIClient: OpenAI | null = null;
 
-  // In a real implementation, you would:
-  // 1. Construct a prompt based on the paper content and fields to extract
-  // 2. Call OpenAI's API with the prompt
-  // 3. Parse the response to extract the fields
+function getOpenAIClient(): OpenAI {
+  if (openAIClient) return openAIClient;
 
-  // Mock implementation for demonstration
-  if (fields.design) {
-    extractedFields.design = mockExtractDesign(paper)
+  const apiKey = localStorage.getItem('openai_api_key');
+  if (!apiKey) {
+    throw new Error('OpenAI API key not found. Please set it in Settings.');
   }
 
-  if (fields.method) {
-    extractedFields.method = mockExtractMethod(paper)
-  }
+  openAIClient = new OpenAI({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
 
-  // Extract custom fields
-  fields.custom.forEach((customField) => {
-    extractedFields[customField.name] = mockExtractCustomField(paper, customField.instruction)
-  })
-
-  return extractedFields
+  return openAIClient;
 }
 
-// Mock extraction functions
-function mockExtractDesign(paper: Paper): string {
-  const abstract = paper.abstract.toLowerCase()
-
-  if (abstract.includes("randomized") || abstract.includes("rct")) {
-    return "Randomized Controlled Trial"
-  } else if (abstract.includes("cohort")) {
-    return "Cohort Study"
-  } else if (abstract.includes("case-control")) {
-    return "Case-Control Study"
-  } else if (abstract.includes("cross-sectional")) {
-    return "Cross-Sectional Study"
-  } else {
-    return "Not clearly specified in abstract"
+export async function cancelBatch(batchId?: string): Promise<void> {
+  if (!batchId) {
+    throw new Error("Batch ID is required to cancel the batch.");
+  }
+  const openai = getOpenAIClient();
+  try {
+    await openai.batches.cancel(batchId);
+  } catch (error) {
+    console.error("Failed to cancel batch:", error);
+    throw new Error("Failed to cancel batch. Please try again.");
   }
 }
-
-function mockExtractMethod(paper: Paper): string {
-  const abstract = paper.abstract.toLowerCase()
-
-  if (abstract.includes("qualitative")) {
-    return "Qualitative Analysis"
-  } else if (abstract.includes("survey") || abstract.includes("questionnaire")) {
-    return "Survey/Questionnaire"
-  } else if (abstract.includes("interview")) {
-    return "Interviews"
-  } else if (abstract.includes("statistical") || abstract.includes("regression")) {
-    return "Statistical Analysis"
-  } else {
-    return "Not clearly specified in abstract"
+export async function createBatch(
+  papers: Paper[],
+  fields: {
+    design: boolean;
+    method: boolean;
+    custom: Array<CustomField>;
   }
+) {
+  const openai = getOpenAIClient();
+
+  const requests = papers.map((paper) => {
+    const systemPrompt = createSystemPrompt(fields);
+    const userPrompt = createUserPrompt(paper);
+    return {
+      custom_id: `request-${paper.id}`,
+      method: "POST",
+      url: "/v1/chat/completions",
+      body: {
+        model: "gpt-4.1",
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content: userPrompt,
+          },
+        ],
+        response_format: { type: "json_object" },
+        "temperature": 1,
+        "max_completion_tokens": 300,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+        "top_logprobs": 4,
+        "logprobs": true
+      },
+    };
+  });
+
+  const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
+  const file = await openai.files.create({
+    file: new File([jsonl], "batch.jsonl", { type: "application/jsonl" }),
+    purpose: "batch",
+  });
+
+  const batch = await openai.batches.create({
+    input_file_id: file.id,
+    endpoint: "/v1/chat/completions",
+    completion_window: "24h",
+  });
+
+  return batch.id;
 }
 
-function mockExtractCustomField(paper: Paper, instruction: string): string {
-  // Simple yes/no extraction based on keyword matching
-  const abstract = paper.abstract.toLowerCase()
-  const instructionLower = instruction.toLowerCase()
+export async function getBatchStatus(batchId: string) {
+  const openai = getOpenAIClient();
+  const batch = await openai.batches.retrieve(batchId);
+  return batch;
+}
 
-  // Extract key terms from the instruction
-  const keyTerms = instructionLower
-    .replace(/does the paper|is there|are there|does it|do they/g, "")
-    .split(" ")
-    .filter((term) => term.length > 4)
-    .map((term) => term.replace(/[^a-z]/g, ""))
+export async function getBatchResults(batchId: string) {
+  const openai = getOpenAIClient();
+  const batch = await openai.batches.retrieve(batchId);
+  if (batch.status === "completed" && batch.output_file_id) {
+    const file = await openai.files.content(batch.output_file_id);
+    const results = await file.text();
+    return results
+      .split("\n")
+      .filter(Boolean)
+      .map((line: string) => JSON.parse(line));
+  }
+  return [];
+}
 
-  // Check if any key terms are in the abstract
-  const hasMatch = keyTerms.some((term) => abstract.includes(term))
+function createUserPrompt(paper: Paper): string {
+  return `Paper Title: ${paper.title}\n\n` +
+    `Paper Abstract: ${paper.abstract}\n\n` +
+    `Paper Authors: ${paper.authors}\n\n` +
+    `Paper Keywords: ${paper.keywords}\n\n` +
+    `Paper DOI: ${paper.doi}\n\n` +
+    `Paper Fulltext: ${paper.fulltext || "Fulltext not available"}\n\n`
+}
+function createSystemPrompt(
+  fields: {
+    design: boolean;
+    method: boolean;
+    custom: Array<{ name: string; instruction: string }>;
+  }
+): string {
+  // Start with the base prompt
+  let prompt = basePrompt + "\n\n";
 
-  return hasMatch ? "Yes" : "No"
+  prompt += "Please extract the following fields from the paper in JSON format:\n";
+
+  const keys = ["design", "method", "flags"];
+  for (const field of fields.custom) {
+    keys.push(nameToKey(field.name));
+  }
+  prompt += designPrompt
+  prompt += methodPrompt;
+  prompt += flagsPrompt;
+
+  if (fields.custom && fields.custom.length > 0) {
+    prompt += "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
+
+    fields.custom.forEach((field) => {
+      prompt += `Field Key : ${nameToKey(field.name)}:\n Instruction: ${field.instruction}\n\n`;
+    });
+    prompt += "Output should be a JSON object with the following keys and nothing else:\n";
+  }
+  prompt += keys.map((key) => `- ${key}`).join("\n") + "\n\n";
+
+  return prompt;
+}
+
+export function nameToKey(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, "_");
 }
