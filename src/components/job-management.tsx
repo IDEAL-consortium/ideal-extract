@@ -9,6 +9,7 @@ import { processBatch } from "@/lib/batch-processor";
 import type { Job } from "@/types";
 import { Download, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { cancelBatch } from "@/lib/openai-service";
 
 export default function JobManagement() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -60,11 +61,14 @@ export default function JobManagement() {
     }
   };
 
-  const handleDeleteJob = async (jobId: number) => {
+  const handleDeleteJob = async (job: Job) => {
     try {
-      await deleteJob(jobId);
-      setJobs(jobs.filter((job) => job.id !== jobId));
+      await deleteJob(job.id);
+      setJobs(jobs.filter((j) => j.id !== job.id));
       toast("Job deleted successfully");
+      if (job.status !== "completed" && job.batchId) {
+        cancelBatch(job.batchId); // Optionally cancel the batch if needed
+      }
     } catch (error) {
       console.error("Error deleting job:", error);
       toast("Failed to delete job");
@@ -89,6 +93,9 @@ export default function JobManagement() {
               <p className="text-sm text-muted-foreground">
                 Created: {new Date(job.created).toLocaleString()}
               </p>
+              <p className="text-sm text-muted-foreground">
+                Status: {job.status.split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               {job.status === "in_progress" && (
@@ -104,6 +111,7 @@ export default function JobManagement() {
               <Button
                 variant="outline"
                 size="sm"
+                disabled={job.status !== "completed"}
                 onClick={() => handleDownload(job.id)}
               >
                 <Download className="h-4 w-4 mr-1" /> Download
@@ -112,7 +120,7 @@ export default function JobManagement() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleDeleteJob(job.id)}
+                onClick={() => handleDeleteJob(job)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>

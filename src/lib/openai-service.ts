@@ -10,18 +10,36 @@ import methodPrompt from "@/components/prompts/method-prompt.md?raw";
 import flagsPrompt from "@/components/prompts/flags-prompt.md?raw";
 
 // Function to get OpenAI client with API key from localStorage
+let openAIClient: OpenAI | null = null;
+
 function getOpenAIClient(): OpenAI {
+  if (openAIClient) return openAIClient;
+
   const apiKey = localStorage.getItem('openai_api_key');
   if (!apiKey) {
     throw new Error('OpenAI API key not found. Please set it in Settings.');
   }
 
-  return new OpenAI({
+  openAIClient = new OpenAI({
     apiKey: apiKey,
     dangerouslyAllowBrowser: true,
   });
+
+  return openAIClient;
 }
 
+export async function cancelBatch(batchId?: string): Promise<void> {
+  if (!batchId) {
+    throw new Error("Batch ID is required to cancel the batch.");
+  }
+  const openai = getOpenAIClient();
+  try {
+    await openai.batches.cancel(batchId);
+  } catch (error) {
+    console.error("Failed to cancel batch:", error);
+    throw new Error("Failed to cancel batch. Please try again.");
+  }
+}
 export async function createBatch(
   papers: Paper[],
   fields: {

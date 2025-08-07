@@ -150,18 +150,19 @@ export default function ExtractFields() {
               keywords: normalizedRow.keywords || "",
             };
           }) as Paper[];
+          const p = papers.splice(0, 10)
           const job = await createJob({
             filename: file.name,
             mode,
             fields,
             status: "in_progress",
             progress: 0,
-            total: 0,
+            total: p.length,
             created: new Date(),
             updated: new Date(),
           });
           await addFile(job.id, file, file.name);
-          await processBatch.start(job.id, papers.splice(0, 10)); // Process first 10 papers
+          await processBatch.start(job.id, p); // Process first 10 papers
 
           toast("Job started. Your extraction job has been started.");
         }

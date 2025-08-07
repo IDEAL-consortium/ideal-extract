@@ -20,10 +20,7 @@ export const processBatch = {
     }
 
     const batch = await getBatchStatus(job.batchId);
-    if (batch.status === "completed") {
-      const results = await getBatchResults(batch.id);
-      // TODO: Process and save the results
-      await updateJob(jobId, { status: "completed" });
-    }
+
+    await updateJob(jobId, { status: batch.status, progress: batch.request_counts?.completed });
   },
 };

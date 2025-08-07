@@ -86,7 +86,7 @@ export async function downloadCSV(jobId: number): Promise<void> {
   const mergedData = originalCsvData.map((originalRow, index) => {
     // Use the row index as paper ID (assuming papers were processed in order)
     const paperId = index+1;
-    const extracted = extractionMap.get(paperId) || {};
+    const extracted = extractionMap.get(paperId)
     if (!extracted) {
       console.warn(`No extraction result found for paper ID ${paperId}`);
       return originalRow; // Return original row if no extraction result
