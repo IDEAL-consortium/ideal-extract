@@ -5,6 +5,7 @@ import MainProvider from "./components/MainProvider";
 import ExtractFields from "./components/extract-fields";
 import JobManagement from "./components/job-management";
 import SettingsPage from "./components/settings";
+import PdfDownload from "./components/pdf-download";
 import "./index.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -13,6 +14,7 @@ createRoot(document.getElementById("root")!).render(
       <Route path="/" element={<MainProvider><ExtractFields /></MainProvider>} />
       <Route path="extract" element={<MainProvider><ExtractFields /></MainProvider>} />
       <Route path="job-management" element={<MainProvider><JobManagement /></MainProvider>} />
+      <Route path="download" element={<MainProvider><PdfDownload /></MainProvider>} />
       <Route path="settings" element={<MainProvider><SettingsPage /></MainProvider>} />
     </Routes>
    </HashRouter>
