@@ -53,6 +53,7 @@ export async function createBatch(
   const requests = papers.map((paper) => {
     const systemPrompt = createSystemPrompt(fields);
     const userPrompt = createUserPrompt(paper);
+    console.log("systemPrompt", systemPrompt);
     return {
       custom_id: `request-${paper.id}`,
       method: "POST",
