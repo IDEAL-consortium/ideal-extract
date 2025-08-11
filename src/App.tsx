@@ -6,7 +6,6 @@ import ExtractFields from "./components/extract-fields";
 import JobManagement from "./components/job-management";
 import SettingsPage from "./components/settings";
 import "./index.css";
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
    <HashRouter>

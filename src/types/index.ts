@@ -14,6 +14,7 @@ export interface Job {
   created: Date;
   updated: Date;
   batchId?: string;
+  pdfFiles?: FileList;
 }
 
 export interface CustomField{
@@ -44,4 +45,13 @@ export interface Paper {
   keywords: string;
   doi: string;
   fulltext?: string;
+}
+
+export interface PDFData {
+    title?: string;
+    authors?: string;
+    year?: string;
+    doi?: string;
+    filename?: string;
+    fulltext?: string;
 }
