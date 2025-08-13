@@ -8,9 +8,11 @@ import basePrompt from "@/components/prompts/base-prompt.md?raw";
 import designPrompt from "@/components/prompts/design-prompt.md?raw";
 import methodPrompt from "@/components/prompts/method-prompt.md?raw";
 import flagsPrompt from "@/components/prompts/flags-prompt.md?raw";
+import { downloadFile } from "./utils";
 
 // Function to get OpenAI client with API key from localStorage
 let openAIClient: OpenAI | null = null;
+const isDryRun = true
 
 function getOpenAIClient(): OpenAI {
   if (openAIClient) return openAIClient;
@@ -83,6 +85,12 @@ export async function createBatch(
   });
 
   const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
+  if (isDryRun) {
+    console.log("Dry run mode: Batch creation skipped.");
+    // Download the batch.jsonl file in dry run mode
+    downloadFile("batch.jsonl", jsonl, "application/jsonl");
+    return "dry-run-batch-id";
+  }
   const file = await openai.files.create({
     file: new File([jsonl], "batch.jsonl", { type: "application/jsonl" }),
     purpose: "batch",

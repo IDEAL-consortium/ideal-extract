@@ -1,15 +1,27 @@
-import { Job, Paper } from "@/types";
+import { Job, Paper, PDFData } from "@/types";
 import { createBatch, getBatchStatus, getBatchResults } from "./openai-service";
 import { getJob, updateJob } from "./job-manager";
+import { PDFMatch } from "./pdf-utils";
 
 export const processBatch = {
-  start: async (jobId: number, papers: Paper[]) => {
+  start: async (jobId: number, papers: Paper[], pdfParams?: {
+    pdfData: Array<PDFData>,
+    matches: Array<PDFMatch>
+  }) => {
     const job = await getJob(jobId);
     if (!job) {
       throw new Error("Job not found");
     }
-
-    const batchId = await createBatch(papers, job.fields);
+    if (pdfParams){
+      addFullTextToPapers(papers, pdfParams);
+    }
+    // if pdfParams is provided, use only papers with full text
+    const filteredPapers = pdfParams ? papers.filter(paper => paper.fulltext) : papers;
+    if (filteredPapers.length === 0) {
+      throw new Error("No papers with full text found for batch processing.");
+    }
+    // Create batch with the filtered papers
+    const batchId = await createBatch(filteredPapers, job.fields);
     await updateJob(jobId, { status: "in_progress", batchId });
   },
 
@@ -24,3 +36,17 @@ export const processBatch = {
     await updateJob(jobId, { status: batch.status, progress: batch.request_counts?.completed });
   },
 };
+
+function addFullTextToPapers(papers: Paper[], pdfParams: {
+  pdfData: Array<PDFData>,
+  matches: Array<PDFMatch>
+}) {
+  const {pdfData, matches} = pdfParams
+  for (const match of matches){
+    const {paperIndex, pdfIndex} = match
+    const paper = papers[paperIndex];
+    if (paper && pdfData[pdfIndex]) {
+      paper.fulltext = pdfData[pdfIndex].fulltext;
+    }
+  }
+  }
