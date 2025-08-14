@@ -8,17 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { useCustomFields } from "@/hooks/use-custom-fields";
 import { processBatch } from "@/lib/batch-processor";
 import { addFile } from "@/lib/files-manager";
 import { createJob } from "@/lib/job-manager";
-import { extractPdfDataBatch, matchPdfsToPapers, PDFMatch } from "@/lib/pdf-utils";
+import { extractPdfDataBatch, matchPdfsToPapersAsync, PDFMatch } from "@/lib/pdf-utils";
 import { downloadFile } from "@/lib/utils";
-import { CustomField, Paper, PDFData } from "@/types";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Paper, PDFData } from "@/types";
+import { Download, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import Papa from "papaparse";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { set } from "react-hook-form";
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
@@ -27,7 +27,7 @@ export default function ExtractFields() {
   const [pdfData, setPdfData] = useState<Array<PDFData>>([]);
   const [extractDesign, setExtractDesign] = useState(true);
   const [extractMethod, setExtractMethod] = useState(true);
-  const [customFields, setCustomFields] = useState<Array<CustomField>>([]);
+  const { customFields, addCustomField, removeCustomField, updateCustomField, downloadCustomFields, handleUploadCustomFields } = useCustomFields();
   const [processingPdfs, setProcessingPdfs] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [pdfMatches, setPdfMatches] = useState<PDFMatch[]>([]);
@@ -81,7 +81,7 @@ export default function ExtractFields() {
               // If we have PDFs selected, try to match them
               if (pdfFolder && pdfFolder.length > 0) {
                 try {
-                  await performMatching(pdfFolder, (a) => setIsMatching(a));
+                  await performMatching((a) => setIsMatching(a));
                 } catch (error) {
                   console.error("Error during matching:", error);
                   toast.error("Error matching PDF files to CSV entries");
@@ -129,10 +129,10 @@ export default function ExtractFields() {
         // If we have a CSV file selected, try to match the PDFs
         if (file) {
           try {
-            await performMatching(e.target.files, (a) => setIsMatching(a));
+            await performMatching((a) => setIsMatching(a), pdfDataResults);
           } catch (error) {
             console.error("Error during matching:", error);
-            toast.error("Error matching PDF files to CSV entries"); 
+            toast.error("Error matching PDF files to CSV entries");
           }
         }
       } catch (error) {
@@ -145,9 +145,14 @@ export default function ExtractFields() {
     }
   };
 
-  const performMatching = async (pdfFiles: FileList, isProcessing: (a: boolean) => void) => {
+  const performMatching = async (isProcessing: (a: boolean) => void, pdfDataToUse?: PDFData[]) => {
     if (!file) {
       console.error("No CSV file selected for matching");
+      return;
+    }
+    const dataToMatch = pdfDataToUse || pdfData;
+    if (!dataToMatch || dataToMatch.length === 0) {
+      toast.error("No PDF files available for matching. Please upload PDF files.");
       return;
     }
     try {
@@ -170,7 +175,8 @@ export default function ExtractFields() {
 
       try {
         const csvData = await readCsvAsText(file);
-        const results = await new Promise<Papa.ParseResult<any>>(
+        // take first 2000 rows for testing
+        const tempResults = await new Promise<Papa.ParseResult<any>>(
           (resolve, reject) => {
             Papa.parse(csvData, {
               header: true,
@@ -180,8 +186,7 @@ export default function ExtractFields() {
             });
           }
         );
-
-        const papers = (results.data as any[]).map((row, index) => {
+        const papers = (tempResults.data.slice(0, 2000) as any[]).map((row, index) => {
           const normalizedRow: { [key: string]: string } = {};
           Object.keys(row).forEach(key => {
             normalizedRow[key.toLowerCase()] = row[key] || "";
@@ -198,18 +203,16 @@ export default function ExtractFields() {
         }) as Paper[];
 
         // Perform the matching using the extracted PDF data and CSV papers
-        if (pdfData.length > 0) {
-          const matches = matchPdfsToPapers(pdfData, papers, 0.5, (...args) => {
-            console.log("Matching PDFs to CSV entries...", ...args);
-          });
-          setPdfMatches(matches);
+        const matches = await matchPdfsToPapersAsync(dataToMatch, papers, 0.5, (...args) => {
+          console.log("Matching PDFs to CSV entries...", ...args);
+        });
+        setPdfMatches(matches);
 
-          if (matches.length > 0) {
-            toast.success(`Successfully matched ${matches.length} PDF files to CSV entries`);
-            console.log('PDF Matches:', matches);
-          } else {
-            toast.warning("No PDF files could be matched to CSV entries. Files will be processed based on filename similarity.");
-          }
+        if (matches.length > 0) {
+          toast.success(`Successfully matched ${matches.length} PDF files to CSV entries`);
+          console.log('PDF Matches:', matches);
+        } else {
+          toast.warning("No PDF files could be matched to CSV entries. Files will be processed based on filename similarity.");
         }
       } catch (error) {
         console.error("Error parsing CSV data:", error);
@@ -223,23 +226,6 @@ export default function ExtractFields() {
     }
   };
 
-  const addCustomField = () => {
-    setCustomFields([...customFields, { name: "", instruction: "" }]);
-  };
-
-  const updateCustomField = (
-    index: number,
-    field: "name" | "instruction",
-    value: string
-  ) => {
-    const updatedFields = [...customFields];
-    updatedFields[index][field] = value;
-    setCustomFields(updatedFields);
-  };
-
-  const removeCustomField = (index: number) => {
-    setCustomFields(customFields.filter((_, i) => i !== index));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -298,14 +284,13 @@ export default function ExtractFields() {
               keywords: normalizedRow.keywords || "",
             };
           }) as Paper[];
-          const p = papers.splice(0, 10)
           const job = await createJob({
             filename: file.name,
             mode,
             fields,
             status: "in_progress",
             progress: 0,
-            total: p.length,
+            total: papers.length,
             created: new Date(),
             updated: new Date(),
           });
@@ -314,7 +299,7 @@ export default function ExtractFields() {
             pdfData: Array.from(pdfData),
             matches: pdfMatches,
           } : undefined;
-          await processBatch.start(job.id, p, pdfParams); // Process first 10 papers
+          await processBatch.start(job.id, papers, pdfParams); // Process first 10 papers
 
           toast("Job started. Your extraction job has been started.");
         }
@@ -338,7 +323,6 @@ export default function ExtractFields() {
     }
     downloadFile("unmatched_pdfs.txt", unmatchedPdfsFileNames.join("\n"), "text/plain");
   };
-  useEffect(() => { console.log("Matching is changed", isMatching) }, [isMatching])
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-4">
@@ -432,7 +416,7 @@ export default function ExtractFields() {
                   if (pdfFolder) {
                     console.log("Re-matching PDFs to CSV entries...");
                     try {
-                      await performMatching(pdfFolder, (a) => setIsMatching(a));
+                      await performMatching((a) => setIsMatching(a));
                     } catch (error) {
                       console.error("Error during re-matching:", error);
                       toast.error("Error re-matching PDF files to CSV entries");
@@ -511,16 +495,47 @@ export default function ExtractFields() {
             <h4 className="text-sm font-medium">
               Custom Fields (Yes/No Questions)
             </h4>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addCustomField}
-              className="cursor-pointer"
-            >
-              <Plus className="h-4 w-4 mr-1" /> Add Field
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={downloadCustomFields}
+                className="cursor-pointer"
+                title="Download custom fields as JSON"
+              >
+                <Download className="h-4 w-4 mr-1" /> Download
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById('upload-custom-fields')?.click()}
+                className="cursor-pointer"
+                title="Upload custom fields from JSON"
+              >
+                <Upload className="h-4 w-4 mr-1" /> Upload
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addCustomField}
+                className="cursor-pointer"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add Field
+              </Button>
+            </div>
           </div>
+
+          {/* Hidden file input for uploading custom fields */}
+          <input
+            id="upload-custom-fields"
+            type="file"
+            accept=".json"
+            onChange={handleUploadCustomFields}
+            style={{ display: 'none' }}
+          />
 
           {customFields.map((field, index) => (
             <div

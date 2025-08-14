@@ -52,8 +52,9 @@ export async function createBatch(
 ) {
   const openai = getOpenAIClient();
 
+  const systemPrompt = createSystemPrompt(fields);
+  downloadFile("system-prompt.txt", systemPrompt, "text/plain");
   const requests = papers.map((paper) => {
-    const systemPrompt = createSystemPrompt(fields);
     const userPrompt = createUserPrompt(paper);
     console.log("systemPrompt", systemPrompt);
     return {
@@ -84,13 +85,13 @@ export async function createBatch(
     };
   });
 
-  const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
-  if (isDryRun) {
-    console.log("Dry run mode: Batch creation skipped.");
-    // Download the batch.jsonl file in dry run mode
-    downloadFile("batch.jsonl", jsonl, "application/jsonl");
-    return "dry-run-batch-id";
-  }
+  const jsonl = requests.slice(0,10).map((req) => JSON.stringify(req)).join("\n");
+  // if (isDryRun) {
+  //   console.log("Dry run mode: Batch creation skipped.");
+  //   // Download the batch.jsonl file in dry run mode
+  //   downloadFile("batch.jsonl", jsonl, "application/jsonl");
+  //   return "dry-run-batch-id";
+  // }
   const file = await openai.files.create({
     file: new File([jsonl], "batch.jsonl", { type: "application/jsonl" }),
     purpose: "batch",
@@ -150,14 +151,14 @@ function createSystemPrompt(
     keys.push(nameToKey(field.name));
   }
   prompt += designPrompt
-  prompt += methodPrompt;
-  prompt += flagsPrompt;
+  prompt += "\n\n" + methodPrompt;
+  prompt += "\n\n" + flagsPrompt;
 
   if (fields.custom && fields.custom.length > 0) {
-    prompt += "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
+    prompt += "\n\n" + "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
 
     fields.custom.forEach((field) => {
-      prompt += `Field Key : ${nameToKey(field.name)}:\n Instruction: ${field.instruction}\n\n`;
+      prompt += `Field Key : ${nameToKey(field.name)}:\nInstruction: ${field.instruction}\n\n`;
     });
     prompt += "Output should be a JSON object with the following keys and nothing else:\n";
   }
@@ -167,5 +168,5 @@ function createSystemPrompt(
 }
 
 export function nameToKey(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, "_");
+  return name.trim().toLowerCase().replace(/\s+/g, "_");
 }

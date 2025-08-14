@@ -1,6 +1,6 @@
-import { Job, Paper, PDFData } from "@/types";
-import { createBatch, getBatchStatus, getBatchResults } from "./openai-service";
+import { Paper, PDFData } from "@/types";
 import { getJob, updateJob } from "./job-manager";
+import { createBatch, getBatchStatus } from "./openai-service";
 import { PDFMatch } from "./pdf-utils";
 
 export const processBatch = {
@@ -46,6 +46,7 @@ function addFullTextToPapers(papers: Paper[], pdfParams: {
     const {paperIndex, pdfIndex} = match
     const paper = papers[paperIndex];
     if (paper && pdfData[pdfIndex]) {
+      console.log(`Adding full text to paper ${paper.id}: ${pdfData[pdfIndex].fulltext?.split("\n")[0]}`);
       paper.fulltext = pdfData[pdfIndex].fulltext;
     }
   }
