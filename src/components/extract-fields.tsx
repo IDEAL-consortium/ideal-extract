@@ -8,34 +8,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { useCustomFields } from "@/hooks/use-custom-fields";
 import { processBatch } from "@/lib/batch-processor";
-import { createJob } from "@/lib/job-manager";
-import { extractPdfData, extractPdfDataBatch, matchPdfsToPapers, PDFMatch } from "@/lib/pdf-utils";
-import { CustomField, Paper } from "@/types";
-import { Plus, Trash2 } from "lucide-react";
-import Papa from "papaparse";
-import { useState } from "react";
-import { toast } from "sonner";
 import { addFile } from "@/lib/files-manager";
+import { createJob } from "@/lib/job-manager";
+import { extractPdfDataBatch, matchPdfsToPapersAsync, PDFMatch } from "@/lib/pdf-utils";
+import { downloadFile } from "@/lib/utils";
+import { Paper, PDFData } from "@/types";
+import { Download, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import Papa from "papaparse";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
   const [file, setFile] = useState<File | null>(null);
   const [pdfFolder, setPdfFolder] = useState<FileList | null>(null);
-  const [pdfData, setPdfData] = useState<Array<{
-    title?: string;
-    authors?: string;
-    year?: string;
-    doi?: string;
-    filename?: string;
-    fulltext?: string;
-  }>>([]);
+  const [pdfData, setPdfData] = useState<Array<PDFData>>([]);
   const [extractDesign, setExtractDesign] = useState(true);
   const [extractMethod, setExtractMethod] = useState(true);
-  const [customFields, setCustomFields] = useState<Array<CustomField>>([]);
+  const { customFields, addCustomField, removeCustomField, updateCustomField, downloadCustomFields, handleUploadCustomFields } = useCustomFields();
   const [processingPdfs, setProcessingPdfs] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [pdfMatches, setPdfMatches] = useState<PDFMatch[]>([]);
+  const [isMatching, setIsMatching] = useState(false);
 
   const validateCsvColumns = (csvData: string): Promise<boolean> => {
     return new Promise((resolve, reject) => {
@@ -84,7 +80,12 @@ export default function ExtractFields() {
 
               // If we have PDFs selected, try to match them
               if (pdfFolder && pdfFolder.length > 0) {
-                await performMatching(pdfFolder);
+                try {
+                  await performMatching((a) => setIsMatching(a));
+                } catch (error) {
+                  console.error("Error during matching:", error);
+                  toast.error("Error matching PDF files to CSV entries");
+                }
               }
             } else {
               setFile(null);
@@ -98,16 +99,16 @@ export default function ExtractFields() {
     }
   };
 
-    const handlePdfFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePdfFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const pdfFiles = Array.from(e.target.files);
-      
+
       setProcessingPdfs(true);
       setProcessingProgress({ current: 0, total: pdfFiles.length });
-      
+
       toast("Extracting PDF data, please wait...");
       console.time("Extracting PDF data");
-      
+
       try {
         // Use batch processing to avoid multiple worker instances
         const pdfDataResults = await extractPdfDataBatch(
@@ -119,7 +120,7 @@ export default function ExtractFields() {
             console.log(`Processing ${fileName} (${current}/${total} - ${progress}%)`);
           }
         );
-        
+
         console.timeEnd("Extracting PDF data");
         setPdfData(pdfDataResults);
         setPdfFolder(e.target.files);
@@ -127,7 +128,12 @@ export default function ExtractFields() {
 
         // If we have a CSV file selected, try to match the PDFs
         if (file) {
-          await performMatching(e.target.files);
+          try {
+            await performMatching((a) => setIsMatching(a), pdfDataResults);
+          } catch (error) {
+            console.error("Error during matching:", error);
+            toast.error("Error matching PDF files to CSV entries");
+          }
         }
       } catch (error) {
         console.error("Error processing PDFs:", error);
@@ -139,79 +145,87 @@ export default function ExtractFields() {
     }
   };
 
-  const performMatching = async (pdfFiles: FileList) => {
-    if (!file) return;
-
+  const performMatching = async (isProcessing: (a: boolean) => void, pdfDataToUse?: PDFData[]) => {
+    if (!file) {
+      console.error("No CSV file selected for matching");
+      return;
+    }
+    const dataToMatch = pdfDataToUse || pdfData;
+    if (!dataToMatch || dataToMatch.length === 0) {
+      toast.error("No PDF files available for matching. Please upload PDF files.");
+      return;
+    }
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        if (event.target?.result) {
-          const csvData = event.target.result as string;
-          const results = await new Promise<Papa.ParseResult<any>>(
-            (resolve, reject) => {
-              Papa.parse(csvData, {
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => resolve(results),
-                error: (error: any) => reject(error),
-              });
-            }
-          );
-
-          const papers = (results.data as any[]).map((row, index) => {
-            const normalizedRow: { [key: string]: string } = {};
-            Object.keys(row).forEach(key => {
-              normalizedRow[key.toLowerCase()] = row[key] || "";
-            });
-
-            return {
-              id: index + 1,
-              title: normalizedRow.title || "",
-              abstract: normalizedRow.abstract || "",
-              authors: normalizedRow.authors || "",
-              doi: normalizedRow.doi || "",
-              keywords: normalizedRow.keywords || "",
-            };
-          }) as Paper[];
-
-          // Perform the matching using the extracted PDF data and CSV papers
-          if (pdfData.length > 0) {
-            const matches = matchPdfsToPapers(pdfData, papers);
-            setPdfMatches(matches);
-
-            if (matches.length > 0) {
-              toast.success(`Successfully matched ${matches.length} PDF files to CSV entries`);
-              console.log('PDF Matches:', matches);
+      const readCsvAsText = (file: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (event.target?.result) {
+              resolve(event.target.result as string);
             } else {
-              toast.warning("No PDF files could be matched to CSV entries. Files will be processed based on filename similarity.");
+              reject(new Error("Failed to read CSV file"));
             }
+          };
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+
+      isProcessing(true);
+      console.log("Matching PDFs to CSV entries...");
+
+      try {
+        const csvData = await readCsvAsText(file);
+        // take first 2000 rows for testing
+        const tempResults = await new Promise<Papa.ParseResult<any>>(
+          (resolve, reject) => {
+            Papa.parse(csvData, {
+              header: true,
+              skipEmptyLines: true,
+              complete: (results) => resolve(results),
+              error: (error: any) => reject(error),
+            });
           }
+        );
+        const papers = (tempResults.data.slice(0, 2000) as any[]).map((row, index) => {
+          const normalizedRow: { [key: string]: string } = {};
+          Object.keys(row).forEach(key => {
+            normalizedRow[key.toLowerCase()] = row[key] || "";
+          });
+
+          return {
+            id: index + 1,
+            title: normalizedRow.title || "",
+            abstract: normalizedRow.abstract || "",
+            authors: normalizedRow.authors || "",
+            doi: normalizedRow.doi || "",
+            keywords: normalizedRow.keywords || "",
+          };
+        }) as Paper[];
+
+        // Perform the matching using the extracted PDF data and CSV papers
+        const matches = await matchPdfsToPapersAsync(dataToMatch, papers, 0.5, (...args) => {
+          console.log("Matching PDFs to CSV entries...", ...args);
+        });
+        setPdfMatches(matches);
+
+        if (matches.length > 0) {
+          toast.success(`Successfully matched ${matches.length} PDF files to CSV entries`);
+          console.log('PDF Matches:', matches);
+        } else {
+          toast.warning("No PDF files could be matched to CSV entries. Files will be processed based on filename similarity.");
         }
-      };
-      reader.readAsText(file);
+      } catch (error) {
+        console.error("Error parsing CSV data:", error);
+        toast.error("Error parsing CSV data");
+      }
+      isProcessing(false);
     } catch (error) {
       console.error("Error matching PDFs:", error);
       toast.error("Error matching PDF files to CSV entries");
+      isProcessing(false);
     }
   };
 
-  const addCustomField = () => {
-    setCustomFields([...customFields, { name: "", instruction: "" }]);
-  };
-
-  const updateCustomField = (
-    index: number,
-    field: "name" | "instruction",
-    value: string
-  ) => {
-    const updatedFields = [...customFields];
-    updatedFields[index][field] = value;
-    setCustomFields(updatedFields);
-  };
-
-  const removeCustomField = (index: number) => {
-    setCustomFields(customFields.filter((_, i) => i !== index));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,20 +284,22 @@ export default function ExtractFields() {
               keywords: normalizedRow.keywords || "",
             };
           }) as Paper[];
-          const p = papers.splice(0, 10)
           const job = await createJob({
             filename: file.name,
             mode,
             fields,
             status: "in_progress",
             progress: 0,
-            total: p.length,
+            total: papers.length,
             created: new Date(),
             updated: new Date(),
-            ...(mode === "fulltext" && pdfFolder && { pdfFiles: pdfFolder }),
           });
           await addFile(job.id, file, file.name);
-          await processBatch.start(job.id, p); // Process first 10 papers
+          const pdfParams = mode === "fulltext" ? {
+            pdfData: Array.from(pdfData),
+            matches: pdfMatches,
+          } : undefined;
+          await processBatch.start(job.id, papers, pdfParams); // Process first 10 papers
 
           toast("Job started. Your extraction job has been started.");
         }
@@ -294,7 +310,19 @@ export default function ExtractFields() {
       toast("Failed to start extraction job");
     }
   };
-
+  const downloadUnmatchedPdfs = () => {
+    if (!pdfData || pdfData.length === 0) {
+      toast.error("No PDF's to download");
+      return;
+    }
+    const matchedIndexes = new Set(pdfMatches.map(match => match.pdfIndex));
+    const unmatchedPdfsFileNames = pdfData.filter((_, index) => !matchedIndexes.has(index)).map(pdf => pdf.filename);
+    if (unmatchedPdfsFileNames.length === 0) {
+      toast.info("All PDFs are matched.");
+      return;
+    }
+    downloadFile("unmatched_pdfs.txt", unmatchedPdfsFileNames.join("\n"), "text/plain");
+  };
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-4">
@@ -376,7 +404,7 @@ export default function ExtractFields() {
           </div>
         )}
 
-        {mode === "fulltext"  && (
+        {mode === "fulltext" && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-medium">PDF Matching Results</h4>
@@ -384,33 +412,48 @@ export default function ExtractFields() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => pdfFolder && performMatching(pdfFolder)}
+                onClick={async () => {
+                  if (pdfFolder) {
+                    console.log("Re-matching PDFs to CSV entries...");
+                    try {
+                      await performMatching((a) => setIsMatching(a));
+                    } catch (error) {
+                      console.error("Error during re-matching:", error);
+                      toast.error("Error re-matching PDF files to CSV entries");
+                    }
+                  }
+                }}
+                disabled={isMatching}
                 className="text-xs"
               >
-                Re-match Files
+                {isMatching ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    Matching...
+                  </>
+                ) : (
+                  "Re-match Files"
+                )}
               </Button>
             </div>
             <div className="max-h-40 overflow-y-auto space-y-1">
-              {pdfMatches.slice(0, 5).map((match, index) => (
-                <div key={index} className="text-xs p-2 bg-muted rounded">
-                  <div className="font-medium">{match.pdfData.filename}</div>
-                  <div className="text-muted-foreground">
-                    → {match.paper.title.substring(0, 50)}...
-                  </div>
-                  <div className="text-green-600">
-                    {Math.round(match.confidence * 100)}% confidence ({match.matchType} match)
-                  </div>
-                </div>
-              ))}
-              {pdfMatches.length > 5 && (
+              {/* Total matches: {pdfMatches.length} */}
+              {pdfMatches.length > 0 && (
                 <div className="text-xs text-muted-foreground">
-                  ...and {pdfMatches.length - 5} more matches
+                  Matched: {pdfMatches.length} out of {pdfData.length} PDFs
                 </div>
               )}
-              {pdfMatches.length === 0 && pdfData.length > 0 && (
-                <div className="text-xs text-muted-foreground p-2 bg-yellow-50 rounded">
-                  No matches found. PDFs will be processed independently.
-                </div>
+              {/* Button to download unmatched PDFs list */}
+              {pdfMatches.length < pdfData.length && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadUnmatchedPdfs}
+                  className="text-xs"
+                >
+                  Download Unmatched PDFs
+                </Button>
               )}
             </div>
           </div>
@@ -452,16 +495,47 @@ export default function ExtractFields() {
             <h4 className="text-sm font-medium">
               Custom Fields (Yes/No Questions)
             </h4>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addCustomField}
-              className="cursor-pointer"
-            >
-              <Plus className="h-4 w-4 mr-1" /> Add Field
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={downloadCustomFields}
+                className="cursor-pointer"
+                title="Download custom fields as JSON"
+              >
+                <Download className="h-4 w-4 mr-1" /> Download
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById('upload-custom-fields')?.click()}
+                className="cursor-pointer"
+                title="Upload custom fields from JSON"
+              >
+                <Upload className="h-4 w-4 mr-1" /> Upload
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addCustomField}
+                className="cursor-pointer"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add Field
+              </Button>
+            </div>
           </div>
+
+          {/* Hidden file input for uploading custom fields */}
+          <input
+            id="upload-custom-fields"
+            type="file"
+            accept=".json"
+            onChange={handleUploadCustomFields}
+            style={{ display: 'none' }}
+          />
 
           {customFields.map((field, index) => (
             <div

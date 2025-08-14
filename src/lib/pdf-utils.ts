@@ -190,11 +190,11 @@ export async function extractPdfDataBatch(
 }
 
 /**
- * Interface for PDF matching results
+ * Interface for PDF matching results - memory efficient version using indices
  */
 export interface PDFMatch {
-    pdfData: PDFData;
-    paper: Paper;
+    pdfIndex: number;  // Index into the original pdfDataList array
+    paperIndex: number; // Index into the original papers array
     confidence: number;
     matchType: 'doi' | 'title' | 'filename';
 }
@@ -284,50 +284,160 @@ function calculateMatchScore(pdfData: PDFData, paper: Paper): {
 }
 
 /**
- * Match PDF files to papers using intelligent scoring
- * Returns matches above confidence threshold, sorted by confidence
+ * Match PDF files to papers using intelligent scoring - memory efficient version
+ * Returns matches with indices instead of copying data objects
  */
 export function matchPdfsToPapers(
     pdfDataList: PDFData[],
     papers: Paper[],
-    minConfidence: number = 0.5
+    minConfidence: number = 0.5,
+    onProgress?: (current: number, total: number, pdfName: string) => void
 ): PDFMatch[] {
     const matches: PDFMatch[] = [];
-    const usedPaperIds = new Set<number>();
+    const usedPaperIndices = new Set<number>();
 
-    // Sort PDFs by the best match they can achieve
-    const pdfMatches = pdfDataList.map(pdfData => {
-        let bestMatch: PDFMatch | null = null;
+    // Create array of potential matches with indices only
+    const potentialMatches: Array<{
+        pdfIndex: number;
+        paperIndex: number;
+        score: number;
+        matchType: 'doi' | 'title' | 'filename';
+    }> = [];
 
-        for (const paper of papers) {
-            if (paper.id !== undefined && usedPaperIds.has(paper.id)) {
-                continue; // Skip already matched papers
-            }
-
+    // Generate all potential matches
+    for (let pdfIndex = 0; pdfIndex < pdfDataList.length; pdfIndex++) {
+        const pdfData = pdfDataList[pdfIndex];
+        
+        for (let paperIndex = 0; paperIndex < papers.length; paperIndex++) {
+            const paper = papers[paperIndex];
             const { score, matchType } = calculateMatchScore(pdfData, paper);
             
-            if (score >= minConfidence && (!bestMatch || score > bestMatch.confidence)) {
-                bestMatch = {
-                    pdfData,
-                    paper,
-                    confidence: score,
+            if (score >= minConfidence) {
+                potentialMatches.push({
+                    pdfIndex,
+                    paperIndex,
+                    score,
                     matchType
-                };
+                });
             }
         }
+        onProgress?.(pdfIndex + 1, pdfDataList.length, pdfData?.filename || `PDF ${pdfIndex + 1}`);
+    }
 
-        return bestMatch;
-    }).filter((match): match is PDFMatch => match !== null);
+    // Sort by confidence (highest first)
+    potentialMatches.sort((a, b) => b.score - a.score);
 
-    // Sort by confidence (highest first) and take best non-conflicting matches
-    pdfMatches.sort((a, b) => b.confidence - a.confidence);
-
-    for (const match of pdfMatches) {
-        if (match.paper.id !== undefined && !usedPaperIds.has(match.paper.id)) {
-            matches.push(match);
-            usedPaperIds.add(match.paper.id);
+    // Select best non-conflicting matches
+    const usedPdfIndices = new Set<number>();
+    
+    for (const potentialMatch of potentialMatches) {
+        if (!usedPdfIndices.has(potentialMatch.pdfIndex) && 
+            !usedPaperIndices.has(potentialMatch.paperIndex)) {
+            
+            matches.push({
+                pdfIndex: potentialMatch.pdfIndex,
+                paperIndex: potentialMatch.paperIndex,
+                confidence: potentialMatch.score,
+                matchType: potentialMatch.matchType
+            });
+            
+            usedPdfIndices.add(potentialMatch.pdfIndex);
+            usedPaperIndices.add(potentialMatch.paperIndex);
         }
     }
 
     return matches;
+}
+
+/**
+ * Non-blocking version of matchPdfsToPapers using async/await with periodic yielding
+ * Prevents UI blocking by yielding control back to the event loop periodically
+ */
+export async function matchPdfsToPapersAsync(
+    pdfDataList: PDFData[],
+    papers: Paper[],
+    minConfidence: number = 0.5,
+    onProgress?: (current: number, total: number, pdfName: string) => void
+): Promise<PDFMatch[]> {
+    const matches: PDFMatch[] = [];
+    const usedPaperIndices = new Set<number>();
+
+    // Create array of potential matches with indices only
+    const potentialMatches: Array<{
+        pdfIndex: number;
+        paperIndex: number;
+        score: number;
+        matchType: 'doi' | 'title' | 'filename';
+    }> = [];
+
+    // Helper function to yield control back to the event loop
+    const yieldToEventLoop = () => new Promise(resolve => setTimeout(resolve, 0));
+
+    // Generate all potential matches with periodic yielding
+    for (let pdfIndex = 0; pdfIndex < pdfDataList.length; pdfIndex++) {
+        const pdfData = pdfDataList[pdfIndex];
+        
+        for (let paperIndex = 0; paperIndex < papers.length; paperIndex++) {
+            const paper = papers[paperIndex];
+            const { score, matchType } = calculateMatchScore(pdfData, paper);
+            
+            if (score >= minConfidence) {
+                potentialMatches.push({
+                    pdfIndex,
+                    paperIndex,
+                    score,
+                    matchType
+                });
+            }
+            // Yield every 100 comparisons to prevent blocking
+            if ((pdfIndex * papers.length + paperIndex) % 100 === 0) {
+                await yieldToEventLoop();
+            }
+        }
+        
+        onProgress?.(pdfIndex + 1, pdfDataList.length, pdfData?.filename || `PDF ${pdfIndex + 1}`);
+        
+        // Yield after processing each PDF
+        await yieldToEventLoop();
+    }
+
+    // Sort by confidence (highest first)
+    potentialMatches.sort((a, b) => b.score - a.score);
+
+    // Select best non-conflicting matches
+    const usedPdfIndices = new Set<number>();
+    
+    for (const potentialMatch of potentialMatches) {
+        if (!usedPdfIndices.has(potentialMatch.pdfIndex) && 
+            !usedPaperIndices.has(potentialMatch.paperIndex)) {
+            
+            matches.push({
+                pdfIndex: potentialMatch.pdfIndex,
+                paperIndex: potentialMatch.paperIndex,
+                confidence: potentialMatch.score,
+                matchType: potentialMatch.matchType
+            });
+            
+            usedPdfIndices.add(potentialMatch.pdfIndex);
+            usedPaperIndices.add(potentialMatch.paperIndex);
+        }
+    }
+
+    return matches;
+}
+
+
+/**
+ * Helper function to get the actual PDF and Paper objects from a match
+ * Use this when you need to access the actual data
+ */
+export function getMatchData(
+    match: PDFMatch, 
+    pdfDataList: PDFData[], 
+    papers: Paper[]
+): { pdfData: PDFData; paper: Paper } {
+    return {
+        pdfData: pdfDataList[match.pdfIndex],
+        paper: papers[match.paperIndex]
+    };
 }
