@@ -111,7 +111,6 @@ export async function getBatchStatus(batchId: string) {
   const batch = await openai.batches.retrieve(batchId);
   return batch;
 }
-
 export async function getBatchResults(batchId: string) {
   const openai = getOpenAIClient();
   const batch = await openai.batches.retrieve(batchId);

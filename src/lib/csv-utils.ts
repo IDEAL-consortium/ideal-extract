@@ -1,7 +1,22 @@
+import { ChatCompletion } from "openai/resources/index.mjs";
+import Papa from "papaparse";
+import { getFilesByJobId } from "./files-manager";
 import { getJob } from "./job-manager";
 import { getBatchResults, nameToKey } from "./openai-service";
-import { getFilesByJobId } from "./files-manager";
-import Papa from "papaparse";
+import { downloadFile } from "./utils";
+
+// Helper function to compute logprobs and perplexity
+function computeLogprobsAnalysis(choice: ChatCompletion.Choice) {
+  if (!choice.logprobs?.content) {
+    return null;
+  }
+  const logprobs = choice.logprobs.content.map((token) => token.logprob);
+  const perplexityScore = Math.exp(-logprobs.reduce((a, b) => a + b, 0) / logprobs.length);
+  return {
+    logprobs,
+    perplexityScore
+  };
+}
 
 export async function downloadCSV(jobId: number): Promise<void> {
   // Get job details
@@ -55,13 +70,16 @@ export async function downloadCSV(jobId: number): Promise<void> {
     const paperId = Number((result.custom_id as string).split("-").pop())
     
     // Extract the response content
-    const responseContent = result.response?.body?.choices || [];
+    const responseContent = (result.response?.body as ChatCompletion)?.choices || [];
     let extracted: any = {};
     
     for (const choice of responseContent) {
       if (choice.message?.role === "assistant") {
         let content = choice.message?.content || "";
         content = content.trim();
+        
+        // Compute logprobs analysis
+        const logprobsAnalysis = computeLogprobsAnalysis(choice);
         
         // Remove markdown code block formatting
         if (content.startsWith("```json")) {
@@ -71,6 +89,7 @@ export async function downloadCSV(jobId: number): Promise<void> {
         
         try {
           extracted = JSON.parse(content);
+          extracted["perplexity_score"] = logprobsAnalysis?.perplexityScore || "N/A"
           console.log("Extracted content for paper %s: %O", paperId, extracted);
           break; // Use the first valid assistant response
         } catch (error) {
@@ -86,7 +105,8 @@ export async function downloadCSV(jobId: number): Promise<void> {
   const mergedData = originalCsvData.map((originalRow, index) => {
     // Use the row index as paper ID (assuming papers were processed in order)
     const paperId = index+1;
-    const extracted = extractionMap.get(paperId)
+    const extracted = extractionMap.get(paperId);
+    
     if (!extracted) {
       // console.warn(`No extraction result found for paper ID ${paperId}`);
       return originalRow; // Return original row if no extraction result
@@ -121,15 +141,7 @@ export async function downloadCSV(jobId: number): Promise<void> {
   const csvContent = Papa.unparse(mergedData);
 
   // Create and download the CSV file
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `extraction-results-${jobId}.csv`);
-  link.style.visibility = "hidden";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  downloadFile(`extracted_fields_${jobId}.csv`, csvContent, "text/csv;charset=utf-8;");
 }
 
 
