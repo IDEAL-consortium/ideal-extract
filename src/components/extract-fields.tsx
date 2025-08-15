@@ -4,10 +4,12 @@ import type React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { useCustomFields } from "@/hooks/use-custom-fields";
 import { processBatch } from "@/lib/batch-processor";
 import { addFile } from "@/lib/files-manager";
@@ -15,14 +17,17 @@ import { createJob } from "@/lib/job-manager";
 import { extractPdfDataBatch, matchPdfsToPapersAsync, PDFMatch } from "@/lib/pdf-utils";
 import { downloadFile } from "@/lib/utils";
 import { Paper, PDFData } from "@/types";
-import { Download, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { Download, Eye, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import Papa from "papaparse";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { createSystemPrompt } from "@/lib/openai-service";
+import SystemPromptViewer from "./SystemPromptViewer";
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
   const [file, setFile] = useState<File | null>(null);
+  const [fileErrors, setFileErrors] = useState<string[]>([]);
   const [pdfFolder, setPdfFolder] = useState<FileList | null>(null);
   const [pdfData, setPdfData] = useState<Array<PDFData>>([]);
   const [extractDesign, setExtractDesign] = useState(true);
@@ -32,6 +37,7 @@ export default function ExtractFields() {
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [pdfMatches, setPdfMatches] = useState<PDFMatch[]>([]);
   const [isMatching, setIsMatching] = useState(false);
+
 
   const validateCsvColumns = (csvData: string): Promise<boolean> => {
     return new Promise((resolve, reject) => {
@@ -47,10 +53,12 @@ export default function ExtractFields() {
 
           if (missingColumns.length > 0) {
             toast.error(`Missing required columns: ${missingColumns.join(', ')}`);
+            setFileErrors([`Missing required columns: ${missingColumns.join(', ')}`]);
             resolve(false);
           } else {
             const paperCount = results.data.length;
             toast.success(`CSV file validated successfully! Found ${paperCount} papers.`);
+            setFileErrors([]);
             resolve(true);
           }
         },
@@ -323,6 +331,7 @@ export default function ExtractFields() {
     }
     downloadFile("unmatched_pdfs.txt", unmatchedPdfsFileNames.join("\n"), "text/plain");
   };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-4">
@@ -375,6 +384,13 @@ export default function ExtractFields() {
           />
           {file && <p className="text-sm text-muted-foreground">{file.name}</p>}
         </div>
+        {fileErrors.length > 0 && (
+          <div className="text-sm text-red-500">
+            {fileErrors.map((error, index) => (
+              <p key={index}>{error}</p>
+            ))}
+          </div>
+        )}
 
         {mode === "fulltext" && (
           <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -451,6 +467,7 @@ export default function ExtractFields() {
                   size="sm"
                   onClick={downloadUnmatchedPdfs}
                   className="text-xs"
+                  disabled={isMatching}
                 >
                   Download Unmatched PDFs
                 </Button>
@@ -496,6 +513,11 @@ export default function ExtractFields() {
               Custom Fields (Yes/No Questions)
             </h4>
             <div className="flex items-center gap-2">
+              <SystemPromptViewer
+                extractDesign={extractDesign}
+                extractMethod={extractMethod}
+                customFields={customFields}
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -585,7 +607,7 @@ export default function ExtractFields() {
         </div>
       </div>
 
-      <Button type="submit" className="w-full cursor-pointer">
+      <Button type="submit" className="w-full cursor-pointer" disabled={!file || (mode === "fulltext" && (!pdfFolder || pdfFolder.length === 0))}>
         Start Extraction
       </Button>
     </form>

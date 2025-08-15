@@ -4,6 +4,24 @@ import { CustomField } from "@/types";
 import { useState } from "react";
 import { toast } from "sonner";
 
+
+export function downloadCustomFields(customFields: CustomField[]) {
+  if (customFields.length === 0) {
+    toast.error("No custom fields to download");
+    return;
+  }
+
+  const fieldsData = {
+    customFields: customFields,
+  };
+
+  downloadFile(
+    "custom-fields.json",
+    JSON.stringify(fieldsData, null, 2),
+    "application/json"
+  );
+  toast.success("Custom fields downloaded successfully");
+};
 export function useCustomFields() {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
@@ -25,23 +43,6 @@ export function useCustomFields() {
     setCustomFields(updatedFields);
   };
 
-  const downloadCustomFields = () => {
-    if (customFields.length === 0) {
-      toast.error("No custom fields to download");
-      return;
-    }
-
-    const fieldsData = {
-      customFields: customFields,
-    };
-
-    downloadFile(
-      "custom-fields.json",
-      JSON.stringify(fieldsData, null, 2),
-      "application/json"
-    );
-    toast.success("Custom fields downloaded successfully");
-  };
 
   const handleUploadCustomFields = (e: React.ChangeEvent<HTMLInputElement>) => {
     console.log(e.target.files)
@@ -57,7 +58,7 @@ export function useCustomFields() {
     reader.onload = (event) => {
       try {
         const jsonData = JSON.parse(event.target?.result as string);
-        
+
         // Validate the JSON structure
         if (!jsonData.customFields || !Array.isArray(jsonData.customFields)) {
           toast.error("Invalid JSON format. Expected customFields array.");
@@ -65,7 +66,7 @@ export function useCustomFields() {
         }
 
         // Validate each custom field has required properties
-        const validFields = jsonData.customFields.every((field: any) => 
+        const validFields = jsonData.customFields.every((field: any) =>
           typeof field.name === 'string' && typeof field.instruction === 'string'
         );
 
@@ -82,7 +83,7 @@ export function useCustomFields() {
       }
     };
     reader.readAsText(file);
-    
+
     // Reset the input value so the same file can be selected again
     e.target.value = '';
   };
@@ -91,7 +92,7 @@ export function useCustomFields() {
     addCustomField,
     removeCustomField,
     updateCustomField,
-    downloadCustomFields,
+    downloadCustomFields: () => downloadCustomFields(customFields),
     handleUploadCustomFields
   };
 }

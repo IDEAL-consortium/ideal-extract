@@ -1,0 +1,3 @@
+- Add an option to download only the processed results not the whole combined file
+- Show how many papers will be processed before submission
+- Add pricing details
