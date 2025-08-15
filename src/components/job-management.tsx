@@ -10,6 +10,7 @@ import type { Job } from "@/types";
 import { Download, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cancelBatch } from "@/lib/openai-service";
+import { downloadCustomFields } from "@/hooks/use-custom-fields";
 
 export default function JobManagement() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -45,7 +46,7 @@ export default function JobManagement() {
     }
   };
 
-  const handleDownload = async (jobId: number) => {
+  const handleDownload = async (jobId: number, onlyProcessed: boolean) => {
     try {
       const job = await getJob(jobId);
       if (!job) {
@@ -53,7 +54,7 @@ export default function JobManagement() {
         return;
       }
 
-      await downloadCSV(jobId);
+      await downloadCSV(jobId, onlyProcessed);
       toast("Results downloaded successfully");
     } catch (error) {
       console.error("Error downloading results:", error);
@@ -72,6 +73,19 @@ export default function JobManagement() {
     } catch (error) {
       console.error("Error deleting job:", error);
       toast("Failed to delete job");
+    }
+  };
+  const handleDownloadCustomFields = async (jobId: number) => {
+    try {
+      const job = await getJob(jobId);
+      if (!job) {
+        toast("Job not found");
+        return;
+      }
+      downloadCustomFields(job.fields.custom || []);
+    } catch (error) {
+      console.error("Error downloading custom fields:", error);
+      toast("Failed to download custom fields");
     }
   };
 
@@ -112,9 +126,26 @@ export default function JobManagement() {
                 variant="outline"
                 size="sm"
                 disabled={job.status !== "completed"}
-                onClick={() => handleDownload(job.id)}
+                onClick={() => handleDownloadCustomFields(job.id)}
               >
-                <Download className="h-4 w-4 mr-1" /> Download
+                <Download className="h-4 w-4 mr-1" /> Download Custom Fields
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={job.status !== "completed"}
+                onClick={() => handleDownload(job.id, true)}
+              >
+                <Download className="h-4 w-4 mr-1" /> Download only processed results
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={job.status !== "completed"}
+                onClick={() => handleDownload(job.id, false)}
+              >
+                <Download className="h-4 w-4 mr-1" /> Download All papers
               </Button>
 
               <Button

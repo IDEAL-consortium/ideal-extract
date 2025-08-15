@@ -17,8 +17,7 @@ function computeLogprobsAnalysis(choice: ChatCompletion.Choice) {
     perplexityScore
   };
 }
-
-export async function downloadCSV(jobId: number): Promise<void> {
+export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promise<void> {
   // Get job details
   const job = await getJob(jobId);
   
@@ -102,7 +101,19 @@ export async function downloadCSV(jobId: number): Promise<void> {
   }
 
   // Merge original CSV data with extraction results
-  const mergedData = originalCsvData.map((originalRow, index) => {
+  const originalDataWithIds = originalCsvData.map((row, index) => {
+    // Use the row index as paper ID (assuming papers were processed in order)
+    const paperId = index + 1 ; // Assuming paper IDs start from 1
+    return { ...row, id: paperId };
+  });
+  let dataToMerge = originalDataWithIds;
+
+  if (onlyProcessed) {
+    // Filter original data to only include processed papers
+    const processedPaperIndexes = Array.from(extractionMap.keys());
+    dataToMerge = originalDataWithIds.filter((row) => processedPaperIndexes.includes(row.id));
+  }
+  const mergedData = dataToMerge.map((originalRow, index) => {
     // Use the row index as paper ID (assuming papers were processed in order)
     const paperId = index+1;
     const extracted = extractionMap.get(paperId);
@@ -128,7 +139,8 @@ export async function downloadCSV(jobId: number): Promise<void> {
     ){
       mergedRow["Flags"] = stringify(extracted.flags || "");
     }
-
+    mergedRow["Perplexity Score"] = extracted.perplexity_score
+    mergedRow["Reasons"] = extracted.reason_for_flags || ""
     // Add custom fields
     job.fields.custom.forEach((field) => {
       mergedRow[field.name] = stringify(extracted[nameToKey(field.name)] || "");

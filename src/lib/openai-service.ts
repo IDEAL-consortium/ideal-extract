@@ -12,7 +12,7 @@ import { downloadFile } from "./utils";
 
 // Function to get OpenAI client with API key from localStorage
 let openAIClient: OpenAI | null = null;
-const isDryRun = true
+const isDryRun = false
 
 function getOpenAIClient(): OpenAI {
   if (openAIClient) return openAIClient;
@@ -86,12 +86,12 @@ export async function createBatch(
   });
 
   const jsonl = requests.slice(0,10).map((req) => JSON.stringify(req)).join("\n");
-  // if (isDryRun) {
-  //   console.log("Dry run mode: Batch creation skipped.");
-  //   // Download the batch.jsonl file in dry run mode
-  //   downloadFile("batch.jsonl", jsonl, "application/jsonl");
-  //   return "dry-run-batch-id";
-  // }
+  if (isDryRun) {
+    console.log("Dry run mode: Batch creation skipped.");
+    // Download the batch.jsonl file in dry run mode
+    downloadFile("batch.jsonl", jsonl, "application/jsonl");
+    return "dry-run-batch-id";
+  }
   const file = await openai.files.create({
     file: new File([jsonl], "batch.jsonl", { type: "application/jsonl" }),
     purpose: "batch",
@@ -133,7 +133,7 @@ function createUserPrompt(paper: Paper): string {
     `Paper DOI: ${paper.doi}\n\n` +
     `Paper Fulltext: ${paper.fulltext || "Fulltext not available"}\n\n`
 }
-function createSystemPrompt(
+export function createSystemPrompt(
   fields: {
     design: boolean;
     method: boolean;
@@ -145,23 +145,24 @@ function createSystemPrompt(
 
   prompt += "Please extract the following fields from the paper in JSON format:\n";
 
-  const keys = ["design", "method", "flags"];
+  const keys = ["design", "method", "flags", "reasons_for_flags(short explanation if any flags are used)"];
   for (const field of fields.custom) {
     keys.push(nameToKey(field.name));
   }
-  prompt += designPrompt
+  prompt += "\n" + designPrompt
   prompt += "\n\n" + methodPrompt;
   prompt += "\n\n" + flagsPrompt;
 
   if (fields.custom && fields.custom.length > 0) {
     prompt += "\n\n" + "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
 
-    fields.custom.forEach((field) => {
-      prompt += `Field Key : ${nameToKey(field.name)}:\nInstruction: ${field.instruction}\n\n`;
+    const fieldprompts = fields.custom.map((field) => {
+      return `Field Key : ${nameToKey(field.name)} \nInstruction: ${field.instruction}`;
     });
-    prompt += "Output should be a JSON object with the following keys and nothing else:\n";
+    prompt += fieldprompts.join("\n\n");
   }
-  prompt += keys.map((key) => `- ${key}`).join("\n") + "\n\n";
+  prompt += "\n\n" + "Output should be a JSON object with the following keys and nothing else:";
+  prompt += "\n" + keys.map((key) => `- ${key}`).join("\n") + "\n\n";
 
   return prompt;
 }
