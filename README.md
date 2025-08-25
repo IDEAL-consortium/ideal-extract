@@ -1,19 +1,18 @@
 # IDEAL extraction tools
-1. Extract Fields
-- 2 modes Fulltext or title and abstract
 
-For Full text mode we will need to download PDF
-PDF download
-- This could be a utility, can be independent of the overall task
+### 2 modes Fulltext or title and abstract
 
-For Field extraction
-- Inputs (Title, Abstract, Keywords, Authors, DOI) in a CSV
+- CSV File
+Columns Required - Title, Abstract, DOI
+
+- Custom Fields
+1. Name - preferably a unique string without any spaces
+2. Instruction - A question to ask about any given research paper with a Yes/No/Maybe answer
+
 - Output Fields (User can choose which ever they want)
-  - Default Fields
-    - Design
-    - Method
-  - User defined fields (Should be yes no questions) (Column title and instruction)
+1. Method
+2. Design
+3. All the custom fields 
+4. Perplexity score - measures how well a probabilistic language model predicts a given text, representing the model's uncertainty as a human-readable value. (We can do and inverse of the perplexity which will be between 0 and 1. Closer to 1 is better)
 
-For a CSV create a job that could paused/resume/cancel. At any point only one job can we active
-Create a job table  and a papers table in indexed DB. The extracted fields are saved in papers table
-We need show progress of how many papers are completed and at any point id the job is paused the result could be downloaded as a csv
+## Full Text Mode
