@@ -8,7 +8,7 @@ export const processBatch = {
   start: async (jobId: number, papers: PaperWithFields[], pdfParams?: {
     pdfData: Array<PDFData>,
     matches: Array<PDFMatch>
-  }) => {
+  }, customFields?: Array<CustomField>) => {
     const job = await getJob(jobId);
     if (!job) {
       throw new Error("Job not found");

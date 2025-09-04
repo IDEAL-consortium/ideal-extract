@@ -31,7 +31,6 @@ export function isPaperIncluded(paper: PaperWithFields, customFields: Array<Cust
                 // if field is recheck_no and paper[key] is "no", we include the paper
                 return true;
             }
-
         }
     }
 
