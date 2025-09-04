@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCustomFields } from "@/hooks/use-custom-fields";
 import { processBatch } from "@/lib/batch-processor";
 import { addFile } from "@/lib/files-manager";
-import { createJob } from "@/lib/job-manager";
+import { createJob, updateJob } from "@/lib/job-manager";
 import { extractPdfDataBatch, matchPdfsToPapersAsync, PDFMatch } from "@/lib/pdf-utils";
 import { downloadFile } from "@/lib/utils";
 import { Paper, PDFData } from "@/types";
@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createSystemPrompt } from "@/lib/openai-service";
 import SystemPromptViewer from "./SystemPromptViewer";
+import { useNavigate } from 'react-router-dom';
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
@@ -37,6 +38,8 @@ export default function ExtractFields() {
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [pdfMatches, setPdfMatches] = useState<PDFMatch[]>([]);
   const [isMatching, setIsMatching] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
 
 
   const validateCsvColumns = (csvData: string): Promise<boolean> => {
@@ -248,6 +251,7 @@ export default function ExtractFields() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       // Create fields configuration
       const fields = {
@@ -302,20 +306,35 @@ export default function ExtractFields() {
             created: new Date(),
             updated: new Date(),
           });
-          await addFile(job.id, file, file.name);
-          const pdfParams = mode === "fulltext" ? {
-            pdfData: Array.from(pdfData),
-            matches: pdfMatches,
-          } : undefined;
-          await processBatch.start(job.id, papers, pdfParams); // Process first 10 papers
+          try {
 
-          toast("Job started. Your extraction job has been started.");
+            await addFile(job.id, file, file.name);
+            const pdfParams = mode === "fulltext" ? {
+              pdfData: Array.from(pdfData),
+              matches: pdfMatches,
+            } : undefined;
+            await processBatch.start(job.id, papers, pdfParams); // Process first 10 papers
+  
+            toast("Job started. Your extraction job has been started.");
+            // go to job management page
+            navigate('/#/job-management');
+          }
+          catch (error) {
+            // update job status to failed
+            await updateJob(job.id, {
+              status: "failed",
+            });
+            console.error("Error creating or starting job:", error);
+            toast.error("Error creating or starting the extraction job");
+          }
         }
       };
       reader.readAsText(file);
     } catch (error) {
       console.error("Error starting job:", error);
       toast("Failed to start extraction job");
+    } finally {
+      setIsSubmitting(false);
     }
   };
   const downloadUnmatchedPdfs = () => {
@@ -607,8 +626,15 @@ export default function ExtractFields() {
         </div>
       </div>
 
-      <Button type="submit" className="w-full cursor-pointer" disabled={!file || (mode === "fulltext" && (!pdfFolder || pdfFolder.length === 0))}>
-        Start Extraction
+      <Button type="submit" className="w-full cursor-pointer" disabled={!file || (mode === "fulltext" && (!pdfFolder || pdfFolder.length === 0)) || isSubmitting}>
+        {isSubmitting ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Starting Extraction...
+          </>
+        ) : (
+          "Start Extraction"
+        )}
       </Button>
     </form>
   );
