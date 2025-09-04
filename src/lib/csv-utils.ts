@@ -4,6 +4,8 @@ import { getFilesByJobId } from "./files-manager";
 import { getJob } from "./job-manager";
 import { getBatchResults, nameToKey } from "./openai-service";
 import { downloadFile } from "./utils";
+import { firstValueTokenLogprobByKey } from "./logprob";
+import { CustomField } from "@/types";
 
 // Helper function to compute logprobs and perplexity
 function computeLogprobsAnalysis(choice: ChatCompletion.Choice) {
@@ -79,7 +81,8 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
         
         // Compute logprobs analysis
         const logprobsAnalysis = computeLogprobsAnalysis(choice);
-        
+        const fieldProbs = getCustomFieldProbs(choice, job.fields.custom);
+        console.log(fieldProbs);
         // Remove markdown code block formatting
         if (content.startsWith("```json")) {
           content = content.substring(7).trim();
@@ -89,6 +92,7 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
         try {
           extracted = JSON.parse(content);
           extracted["perplexity_score"] = logprobsAnalysis?.perplexityScore || "N/A"
+          extracted["field_logprobs"] = fieldProbs || {}
           console.log("Extracted content for paper %s: %O", paperId, extracted);
           break; // Use the first valid assistant response
         } catch (error) {
@@ -143,7 +147,9 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     mergedRow["Reasons"] = extracted.reason_for_flags || ""
     // Add custom fields
     job.fields.custom.forEach((field) => {
-      mergedRow[field.name] = stringify(extracted[nameToKey(field.name)] || "");
+      const fieldKey = nameToKey(field.name);
+      mergedRow[field.name] = stringify(extracted[fieldKey] || "");
+      mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
     });
 
     return mergedRow;
@@ -170,4 +176,21 @@ const stringify = (data: any): string => {
     .filter(([key, value]) => !!value) // filter out empty values
     .map(([key, value]) => `${key}`)
     .join(", ");
+}
+
+function getCustomFieldProbs(choice: ChatCompletion.Choice, fields: Array<CustomField>) {
+  if (!choice.logprobs?.content) {
+    return null;
+  }
+  const tokens = choice.logprobs.content;
+  let fieldProbs: Record<string, number | undefined> = {};
+  for (const field of fields) {
+    const key = nameToKey(field.name);
+    const logprob = firstValueTokenLogprobByKey(tokens, key, { ignoreOpeningQuote: true });
+    // convert log prob to linear prob
+    if (logprob !== undefined) {
+      fieldProbs[key] = Math.exp(logprob);
+    }
+  }
+  return fieldProbs;
 }

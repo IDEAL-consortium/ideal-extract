@@ -6,11 +6,14 @@ import ExtractFields from "./components/extract-fields";
 import JobManagement from "./components/job-management";
 import SettingsPage from "./components/settings";
 import PdfDownload from "./components/pdf-download";
+import Markdown from "react-markdown"
 import "./index.css";
+import readme from "../README.md?raw";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
    <HashRouter>
     <Routes>
+      {/* <Route path="/" element={<MainProvider><article className="prose lg:prose-xl"><Markdown>{readme}</Markdown></article></MainProvider>} /> */}
       <Route path="/" element={<MainProvider><ExtractFields /></MainProvider>} />
       <Route path="extract" element={<MainProvider><ExtractFields /></MainProvider>} />
       <Route path="job-management" element={<MainProvider><JobManagement /></MainProvider>} />
