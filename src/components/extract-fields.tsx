@@ -317,7 +317,6 @@ export default function ExtractFields() {
   
             toast("Job started. Your extraction job has been started.");
             // go to job management page
-            navigate('/#/job-management');
           }
           catch (error) {
             // update job status to failed
@@ -327,6 +326,8 @@ export default function ExtractFields() {
             console.error("Error creating or starting job:", error);
             toast.error("Error creating or starting the extraction job");
           }
+          navigate('/job-management');
+
         }
       };
       reader.readAsText(file);
