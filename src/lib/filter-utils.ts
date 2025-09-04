@@ -13,12 +13,15 @@ export function isPaperIncluded(paper: PaperWithFields, customFields: Array<Cust
         acc[nameToKey(field.name)] = field;
         return acc;
     }, {} as Record<string, CustomField>);
-    for(const key in keys){
+    for(const key of keys){
         const field = keyToCheckMap[key];
         if (field) {
             if (!paper[key]) {
                 // if field is not present we include the paper
                 return true
+            }
+            if (!!field.force_recheck) {
+                return true;
             }
             if (field.recheck_yes && paper[key].toLowerCase() === "yes") {
                 // if field is recheck_yes and paper[key] is "yes", we include the paper
@@ -28,6 +31,7 @@ export function isPaperIncluded(paper: PaperWithFields, customFields: Array<Cust
                 // if field is recheck_no and paper[key] is "no", we include the paper
                 return true;
             }
+
         }
     }
 

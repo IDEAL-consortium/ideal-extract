@@ -8,7 +8,7 @@ export const processBatch = {
   start: async (jobId: number, papers: PaperWithFields[], pdfParams?: {
     pdfData: Array<PDFData>,
     matches: Array<PDFMatch>
-  }, customFields?: Array<CustomField>) => {
+  }) => {
     const job = await getJob(jobId);
     if (!job) {
       throw new Error("Job not found");
@@ -17,7 +17,7 @@ export const processBatch = {
       addFullTextToPapers(papers, pdfParams);
     }
     // if pdfParams is provided, use only papers with full text
-    const filteredPapers = pdfParams ? papers.filter(paper => paper.fulltext && isPaperIncluded(paper, customFields)) : papers;
+    const filteredPapers = pdfParams ? papers.filter(paper => paper.fulltext && isPaperIncluded(paper, job.fields.custom)) : papers;
     if (filteredPapers.length === 0) {
       throw new Error("No papers with full text found for batch processing.");
     }
