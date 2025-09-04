@@ -85,7 +85,7 @@ export async function createBatch(
     };
   });
 
-  const jsonl = requests.slice(0,10).map((req) => JSON.stringify(req)).join("\n");
+  const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
   if (isDryRun) {
     console.log("Dry run mode: Batch creation skipped.");
     // Download the batch.jsonl file in dry run mode
