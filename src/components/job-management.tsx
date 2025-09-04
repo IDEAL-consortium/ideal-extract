@@ -15,14 +15,20 @@ import { downloadCustomFields } from "@/hooks/use-custom-fields";
 export default function JobManagement() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingStatus, setCheckingStatus] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     loadJobs();
 
-    // Set up interval to refresh job status
-    const interval = setInterval(loadJobs, 5000);
+    // Set up interval to refresh job status, but only if there are active jobs
+    const interval = setInterval(() => {
+      // Only poll if there are jobs in active states
+      if (jobs.some(job => ["validating", "in_progress", "finalizing", "canceling"].includes(job.status))) {
+        loadJobs();
+      }
+    }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [jobs]);
 
   const loadJobs = async () => {
     try {
@@ -36,13 +42,26 @@ export default function JobManagement() {
   };
 
   const handleCheckStatus = async (jobId: number) => {
+    // Prevent multiple concurrent status checks for the same job
+    if (checkingStatus.has(jobId)) {
+      return;
+    }
+
+    setCheckingStatus(prev => new Set(prev).add(jobId));
+    
     try {
       await processBatch.checkStatus(jobId);
-      loadJobs();
+      await loadJobs();
       toast("Job status updated.");
     } catch (error) {
       console.error("Error checking job status:", error);
       toast("Failed to check job status.");
+    } finally {
+      setCheckingStatus(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(jobId);
+        return newSet;
+      });
     }
   };
 
@@ -112,13 +131,15 @@ export default function JobManagement() {
               </p>
             </div>
             <div className="flex items-center space-x-2">
-              {job.status === "in_progress" && (
+              {["validating", "in_progress", "finalizing", "canceling"].includes(job.status) && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleCheckStatus(job.id)}
+                  disabled={checkingStatus.has(job.id)}
                 >
-                  <RefreshCw className="h-4 w-4 mr-1" /> Check Status
+                  <RefreshCw className={`h-4 w-4 mr-1 ${checkingStatus.has(job.id) ? 'animate-spin' : ''}`} /> 
+                  {checkingStatus.has(job.id) ? 'Checking...' : 'Check Status'}
                 </Button>
               )}
 

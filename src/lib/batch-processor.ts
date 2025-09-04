@@ -32,9 +32,23 @@ export const processBatch = {
       throw new Error("Job or batch ID not found");
     }
 
-    const batch = await getBatchStatus(job.batchId);
-
-    await updateJob(jobId, { status: batch.status, progress: batch.request_counts?.completed });
+    try {
+      const batch = await getBatchStatus(job.batchId);
+      
+      // Validate progress doesn't exceed total
+      const progress = batch.request_counts?.completed || 0;
+      const validatedProgress = Math.min(progress, job.total);
+      
+      await updateJob(jobId, { 
+        status: batch.status, 
+        progress: validatedProgress,
+        updated: new Date()
+      });
+    } catch (error) {
+      console.error(`Failed to check status for job ${jobId}:`, error);
+      // Don't update job status on API failures to avoid overwriting valid states
+      throw new Error(`Failed to check batch status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   },
 };
 
