@@ -22,7 +22,7 @@ export interface CustomField{
   instruction: string;
   recheck_yes?: boolean;
   recheck_no?: boolean;
-  check_blanks_and_others?: boolean;
+  force_recheck?: boolean;
 }
 
 export interface JobFile {
@@ -55,3 +55,5 @@ export interface PDFData {
     filename?: string;
     fulltext?: string;
 }
+
+export type PaperWithFields = Paper & Record<string, string>

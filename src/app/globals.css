@@ -1,5 +1,5 @@
 @tailwind utilities;
-
+@plugin "@tailwindcss/typography";
 @custom-variant dark (&:is(.dark *));
 
 body {

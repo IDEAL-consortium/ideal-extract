@@ -1,13 +1,13 @@
 "use client";
 
-import { Paper, ExtractedFields, CustomField } from "@/types";
+import { CustomField, Paper } from "@/types";
 import OpenAI from "openai";
 
 // Import prompt files
 import basePrompt from "@/components/prompts/base-prompt.md?raw";
 import designPrompt from "@/components/prompts/design-prompt.md?raw";
-import methodPrompt from "@/components/prompts/method-prompt.md?raw";
 import flagsPrompt from "@/components/prompts/flags-prompt.md?raw";
+import methodPrompt from "@/components/prompts/method-prompt.md?raw";
 import { downloadFile } from "./utils";
 
 // Function to get OpenAI client with API key from localStorage
@@ -85,7 +85,7 @@ export async function createBatch(
     };
   });
 
-  const jsonl = requests.slice(0,10).map((req) => JSON.stringify(req)).join("\n");
+  const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
   if (isDryRun) {
     console.log("Dry run mode: Batch creation skipped.");
     // Download the batch.jsonl file in dry run mode

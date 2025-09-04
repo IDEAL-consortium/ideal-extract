@@ -26,7 +26,13 @@ export function useCustomFields() {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
   const addCustomField = () => {
-    setCustomFields([...customFields, { name: "", instruction: "" }]);
+    setCustomFields([...customFields, { 
+      name: "", 
+      instruction: "",
+      recheck_yes: false,
+      recheck_no: false,
+      force_recheck: false
+    }]);
   };
 
   const removeCustomField = (index: number) => {
@@ -35,11 +41,24 @@ export function useCustomFields() {
 
   const updateCustomField = (
     index: number,
-    field: "name" | "instruction",
-    value: string
+    field: "name" | "instruction" | "recheck_yes" | "recheck_no" | "force_recheck",
+    value: string | boolean
   ) => {
     const updatedFields = [...customFields];
-    updatedFields[index][field] = value;
+    if (field === "name" || field === "instruction") {
+      (updatedFields[index] as any)[field] = value as string;
+    } else {
+      // Handle mutual exclusivity for the three options
+      if (value === true) {
+        // If setting one option to true, set the others to false
+        updatedFields[index].recheck_yes = field === "recheck_yes";
+        updatedFields[index].recheck_no = field === "recheck_no";
+        updatedFields[index].force_recheck = field === "force_recheck";
+      } else {
+        // If setting to false, just update the specific field
+        (updatedFields[index] as any)[field] = false;
+      }
+    }
     setCustomFields(updatedFields);
   };
 
@@ -67,11 +86,15 @@ export function useCustomFields() {
 
         // Validate each custom field has required properties
         const validFields = jsonData.customFields.every((field: any) =>
-          typeof field.name === 'string' && typeof field.instruction === 'string'
+          typeof field.name === 'string' && 
+          typeof field.instruction === 'string' &&
+          (field.recheck_yes === undefined || typeof field.recheck_yes === 'boolean') &&
+          (field.recheck_no === undefined || typeof field.recheck_no === 'boolean') &&
+          (field.force_recheck === undefined || typeof field.force_recheck === 'boolean')
         );
 
         if (!validFields) {
-          toast.error("Invalid custom fields format. Each field must have 'name' and 'instruction' properties.");
+          toast.error("Invalid custom fields format. Each field must have 'name' and 'instruction' properties, with optional boolean flags.");
           return;
         }
 
