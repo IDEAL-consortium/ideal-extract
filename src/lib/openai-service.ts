@@ -53,7 +53,6 @@ export async function createBatch(
   const openai = getOpenAIClient();
 
   const systemPrompt = createSystemPrompt(fields);
-  downloadFile("system-prompt.txt", systemPrompt, "text/plain");
   const requests = papers.map((paper) => {
     const userPrompt = createUserPrompt(paper);
     console.log("systemPrompt", systemPrompt);

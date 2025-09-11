@@ -286,7 +286,7 @@ export default function ExtractFields() {
               normalizedRow[key.toLowerCase()] = row[key] || "";
             });
 
-            return normalizedRow as PaperWithFields
+            return {id : index+1, ...normalizedRow} as PaperWithFields
           }) as PaperWithFields[];
           const job = await createJob({
             filename: file.name,
