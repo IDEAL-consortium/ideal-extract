@@ -37,7 +37,7 @@ Users can select any combination of the following output fields:
   - Each field also include a probablity score (calculated from underlying logprobs of the tokens)
 - **Perplexity Score:**  
   - Indicates how well a probabilistic language model predicts the text.  
-  - An inverse perplexity score (ranging from 0 to 1) is provided; values closer to 1 indicate better model confidence.
+  - Values closer to 1 indicate better model confidence.
 
 ---
 
