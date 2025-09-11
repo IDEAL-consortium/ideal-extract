@@ -16,7 +16,7 @@ import { addFile } from "@/lib/files-manager";
 import { createJob } from "@/lib/job-manager";
 import { extractPdfDataBatch, matchPdfsToPapersAsync, PDFMatch } from "@/lib/pdf-utils";
 import { downloadFile } from "@/lib/utils";
-import { Paper, PDFData } from "@/types";
+import { Paper, PDFData,PaperWithFields } from "@/types";
 import { Download, Eye, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import Papa from "papaparse";
 import { useEffect, useState } from "react";
@@ -256,6 +256,9 @@ export default function ExtractFields() {
         custom: customFields.map((field) => ({
           name: field.name,
           instruction: field.instruction,
+          recheck_yes: field.recheck_yes || false,
+          recheck_no: field.recheck_no || false,
+          force_recheck: field.force_recheck || false,
         })),
       };
       // Create and start the job
@@ -283,15 +286,8 @@ export default function ExtractFields() {
               normalizedRow[key.toLowerCase()] = row[key] || "";
             });
 
-            return {
-              id: index + 1, // Simple ID generation based on index
-              title: normalizedRow.title || "",
-              abstract: normalizedRow.abstract || "",
-              authors: normalizedRow.authors || "",
-              doi: normalizedRow.doi || "",
-              keywords: normalizedRow.keywords || "",
-            };
-          }) as Paper[];
+            return {id : index+1, ...normalizedRow} as PaperWithFields
+          }) as PaperWithFields[];
           const job = await createJob({
             filename: file.name,
             mode,
@@ -562,46 +558,90 @@ export default function ExtractFields() {
           {customFields.map((field, index) => (
             <div
               key={index}
-              className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start"
+              className="space-y-3 p-4 border rounded-lg"
             >
-              <div>
-                <Label htmlFor={`field-name-${index}`} className="text-xs">
-                  Column Title
-                </Label>
-                <Input
-                  id={`field-name-${index}`}
-                  value={field.name}
-                  onChange={(e) =>
-                    updateCustomField(index, "name", e.target.value)
-                  }
-                  placeholder="e.g., Has Control Group"
-                />
-              </div>
-              <div>
-                <Label
-                  htmlFor={`field-instruction-${index}`}
-                  className="text-xs"
+              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <div>
+                  <Label htmlFor={`field-name-${index}`} className="text-xs">
+                    Column Title
+                  </Label>
+                  <Input
+                    id={`field-name-${index}`}
+                    value={field.name}
+                    onChange={(e) =>
+                      updateCustomField(index, "name", e.target.value)
+                    }
+                    placeholder="e.g., Has Control Group"
+                  />
+                </div>
+                <div>
+                  <Label
+                    htmlFor={`field-instruction-${index}`}
+                    className="text-xs"
+                  >
+                    Instruction
+                  </Label>
+                  <Input
+                    id={`field-instruction-${index}`}
+                    value={field.instruction}
+                    onChange={(e) =>
+                      updateCustomField(index, "instruction", e.target.value)
+                    }
+                    placeholder="e.g., Does the paper include a control group?"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mt-5 cursor-pointer"
+                  onClick={() => removeCustomField(index)}
                 >
-                  Instruction
-                </Label>
-                <Input
-                  id={`field-instruction-${index}`}
-                  value={field.instruction}
-                  onChange={(e) =>
-                    updateCustomField(index, "instruction", e.target.value)
-                  }
-                  placeholder="e.g., Does the paper include a control group?"
-                />
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="mt-5 cursor-pointer"
-                onClick={() => removeCustomField(index)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+
+              {mode == "fulltext" && <div className="space-y-2">
+                <Label className="text-xs font-medium">Options (select one)</Label>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`recheck-yes-${index}`}
+                      checked={field.recheck_yes || false}
+                      onCheckedChange={(checked) =>
+                        updateCustomField(index, "recheck_yes", checked === true)
+                      }
+                    />
+                    <Label htmlFor={`recheck-yes-${index}`} className="text-xs">
+                      Recheck Yes
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`recheck-no-${index}`}
+                      checked={field.recheck_no || false}
+                      onCheckedChange={(checked) =>
+                        updateCustomField(index, "recheck_no", checked === true)
+                      }
+                    />
+                    <Label htmlFor={`recheck-no-${index}`} className="text-xs">
+                      Recheck No
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`force-recheck-${index}`}
+                      checked={field.force_recheck || false}
+                      onCheckedChange={(checked) =>
+                        updateCustomField(index, "force_recheck", checked === true)
+                      }
+                    />
+                    <Label htmlFor={`force-recheck-${index}`} className="text-xs">
+                      Force Recheck
+                    </Label>
+                  </div>
+                </div>
+              </div>}
             </div>
           ))}
         </div>

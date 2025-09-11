@@ -1,13 +1,13 @@
 "use client";
 
-import { Paper, ExtractedFields, CustomField } from "@/types";
+import { CustomField, Paper } from "@/types";
 import OpenAI from "openai";
 
 // Import prompt files
 import basePrompt from "@/components/prompts/base-prompt.md?raw";
 import designPrompt from "@/components/prompts/design-prompt.md?raw";
-import methodPrompt from "@/components/prompts/method-prompt.md?raw";
 import flagsPrompt from "@/components/prompts/flags-prompt.md?raw";
+import methodPrompt from "@/components/prompts/method-prompt.md?raw";
 import { downloadFile } from "./utils";
 
 // Function to get OpenAI client with API key from localStorage
@@ -53,7 +53,6 @@ export async function createBatch(
   const openai = getOpenAIClient();
 
   const systemPrompt = createSystemPrompt(fields);
-  downloadFile("system-prompt.txt", systemPrompt, "text/plain");
   const requests = papers.map((paper) => {
     const userPrompt = createUserPrompt(paper);
     console.log("systemPrompt", systemPrompt);
