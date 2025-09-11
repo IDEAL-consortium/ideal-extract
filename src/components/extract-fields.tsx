@@ -600,8 +600,8 @@ export default function ExtractFields() {
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
-              
-              <div className="space-y-2">
+
+              {mode == "fulltext" && <div className="space-y-2">
                 <Label className="text-xs font-medium">Options (select one)</Label>
                 <div className="flex flex-wrap gap-4">
                   <div className="flex items-center space-x-2">
@@ -641,7 +641,7 @@ export default function ExtractFields() {
                     </Label>
                   </div>
                 </div>
-              </div>
+              </div>}
             </div>
           ))}
         </div>
