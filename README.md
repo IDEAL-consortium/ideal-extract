@@ -8,14 +8,17 @@ The IDEAL extraction tools support two modes of operation: **Full Text** and **T
 
 ## Input Requirements
 
-### 1. CSV File
+### 1. OpenAI API Key
+  - In Settings add the OpenAI API Key
+
+### 2. CSV File
 
 - **Required Columns:**  
   - `Title`
   - `Abstract`
   - `DOI`
 
-### 2. Custom Fields
+### 3. Custom Fields
 
 - **Name:**  
   - Use a unique, space-free string as the identifier.
