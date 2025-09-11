@@ -67,7 +67,7 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
         }
       },
       error: (error: any) => {
-        console.log("CSV parsing error:", error);
+        console.error("CSV parsing error:", error);
         reject(error);
       }
     });
