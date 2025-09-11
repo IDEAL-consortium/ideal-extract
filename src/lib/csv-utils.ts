@@ -39,7 +39,20 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
   
   // Assume the first file is the CSV file
   const originalFile = files[0];
-  const csvText = await originalFile.file.text();
+
+  if (!originalFile.file) {
+    throw new Error("File blob is missing");
+  }
+
+  
+  const csvText = await (async () => {
+    try {
+      return await originalFile.file.text();
+    } catch (error) {
+      console.error("Error reading CSV file from indexedDB:", error);
+      throw new Error("Failed to read the original CSV file");
+    }
+  })();
   
   // Parse the original CSV to get the paper data
   const originalCsvData = await new Promise<any[]>((resolve, reject) => {
@@ -53,7 +66,10 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
           resolve(results.data);
         }
       },
-      error: (error: any) => reject(error)
+      error: (error: any) => {
+        console.log("CSV parsing error:", error);
+        reject(error);
+      }
     });
   });
 
