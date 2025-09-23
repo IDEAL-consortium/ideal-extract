@@ -8,14 +8,17 @@ The IDEAL extraction tools support two modes of operation: **Full Text** and **T
 
 ## Input Requirements
 
-### 1. CSV File
+### 1. OpenAI API Key
+  - In Settings add the OpenAI API Key
+
+### 2. CSV File
 
 - **Required Columns:**  
   - `Title`
   - `Abstract`
   - `DOI`
 
-### 2. Custom Fields
+### 3. Custom Fields
 
 - **Name:**  
   - Use a unique, space-free string as the identifier.
@@ -34,7 +37,7 @@ Users can select any combination of the following output fields:
   - Each field also include a probablity score (calculated from underlying logprobs of the tokens)
 - **Perplexity Score:**  
   - Indicates how well a probabilistic language model predicts the text.  
-  - An inverse perplexity score (ranging from 0 to 1) is provided; values closer to 1 indicate better model confidence.
+  - Values closer to 1 indicate better model confidence.
 
 ---
 
