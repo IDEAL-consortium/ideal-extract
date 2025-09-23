@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import MainProvider from "./components/MainProvider";
 import ExtractFields from "./components/extract-fields";
+import LlmEval from "./components/llm-eval";
 import JobManagement from "./components/job-management";
 import SettingsPage from "./components/settings";
 import PdfDownload from "./components/pdf-download";
@@ -16,6 +17,7 @@ createRoot(document.getElementById("root")!).render(
       {/* <Route path="/" element={<MainProvider><article className="prose lg:prose-xl"><Markdown>{readme}</Markdown></article></MainProvider>} /> */}
       <Route path="/" element={<MainProvider><ExtractFields /></MainProvider>} />
       <Route path="extract" element={<MainProvider><ExtractFields /></MainProvider>} />
+      <Route path="llm-eval" element={<MainProvider><LlmEval /></MainProvider>} />
       <Route path="job-management" element={<MainProvider><JobManagement /></MainProvider>} />
       <Route path="download" element={<MainProvider><PdfDownload /></MainProvider>} />
       <Route path="settings" element={<MainProvider><SettingsPage /></MainProvider>} />
