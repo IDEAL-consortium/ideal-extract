@@ -13,6 +13,12 @@ const routesMetadata = [
     description: "Upload and extract fields from papers",
   },
   {
+    title: "LLM Eval",
+    url: `${basePath}/#/llm-eval`,
+    icon: FileText,
+    description: "Evaluate LLM predictions vs human labels",
+  },
+  {
     title: "Job Management",
     url: `${basePath}/#/job-management`,
     icon: Settings,
