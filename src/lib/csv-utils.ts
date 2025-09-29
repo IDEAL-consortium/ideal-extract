@@ -171,7 +171,9 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     ){
       mergedRow["Flags"] = stringify(extracted.flags || "");
     }
-    mergedRow["Perplexity Score"] = extracted.perplexity_score
+    if (showLogprobsFlag) {
+      mergedRow["Perplexity Score"] = extracted.perplexity_score
+    }
     mergedRow["Reasons"] = extracted.reason_for_flags || ""
     // Add custom fields
     job.fields.custom.forEach((field) => {
