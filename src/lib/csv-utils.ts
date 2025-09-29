@@ -74,10 +74,10 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
   });
   const shouldIncludeLogprobs = () => {
     // to support older jobs created before logprobs option was added
-    if (!job?.options) {
+    if (!job?.options || job.options.logprobs === undefined) {
       return true;
     }
-    return job?.options?.logprobs || false;
+    return job.options.logprobs;
   };
   const showLogprobsFlag = shouldIncludeLogprobs();
 
