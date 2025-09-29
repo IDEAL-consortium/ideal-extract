@@ -72,6 +72,16 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
       }
     });
   });
+  const showLogprobs = () => {
+    // to support older jobs created before logprobs option was added
+    if (!job?.options) {
+      return true;
+    }
+    return job?.options?.logprobs || false;
+  };
+  const showLogprobsFlag = showLogprobs();
+
+
 
   // Get extraction results from OpenAI batch
   const results = await getBatchResults(job.batchId);
@@ -107,8 +117,10 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
         
         try {
           extracted = JSON.parse(content);
-          extracted["perplexity_score"] = logprobsAnalysis?.perplexityScore || "N/A"
-          extracted["field_logprobs"] = fieldProbs || {}
+          if (showLogprobsFlag) {
+            extracted["perplexity_score"] = logprobsAnalysis?.perplexityScore || "N/A"
+            extracted["field_logprobs"] = fieldProbs || {}
+          }
           console.log("Extracted content for paper %s: %O", paperId, extracted);
           break; // Use the first valid assistant response
         } catch (error) {
@@ -165,7 +177,9 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     job.fields.custom.forEach((field) => {
       const fieldKey = nameToKey(field.name);
       mergedRow[field.name] = stringify(extracted[fieldKey] || "");
-      mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
+      if (showLogprobsFlag) {
+        mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
+      }
     });
 
     return mergedRow;

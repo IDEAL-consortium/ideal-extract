@@ -39,6 +39,7 @@ export default function ExtractFields() {
   const [pdfMatches, setPdfMatches] = useState<PDFMatch[]>([]);
   const [isMatching, setIsMatching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [enableLogprobs, setEnableLogprobs] = useState(false);
   const navigate = useNavigate();
 
 
@@ -301,6 +302,9 @@ export default function ExtractFields() {
             total: papers.length,
             created: new Date(),
             updated: new Date(),
+            options:{
+              logprobs: enableLogprobs
+            }
           });
           try {
 
@@ -520,6 +524,14 @@ export default function ExtractFields() {
               onCheckedChange={(checked) => setExtractMethod(checked === true)}
             />
             <Label htmlFor="method">Method</Label>
+          </div>
+          <div className="flex items-center space-x-2 cursor-pointer">
+            <Checkbox
+              id="logprobs"
+              checked={enableLogprobs}
+              onCheckedChange={(checked) => setEnableLogprobs(checked === true)}
+            />
+            <Label htmlFor="logprobs">Enable Log Probabilities</Label>
           </div>
         </div>
 
