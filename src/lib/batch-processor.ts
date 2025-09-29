@@ -22,7 +22,7 @@ export const processBatch = {
       throw new Error("No papers with full text found for batch processing.");
     }
     // Create batch with the filtered papers
-    const batchId = await createBatch(filteredPapers, job.fields);
+    const batchId = await createBatch(filteredPapers, job.fields, job.options || {});
     await updateJob(jobId, { status: "in_progress", batchId });
   },
 

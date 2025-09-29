@@ -66,6 +66,7 @@ export async function createBatch(
   const openai = getOpenAIClient();
   const systemPrompt = createSystemPrompt(fields);
   const aiOptions = getAIOptions(options);
+  console.log("AI Options:", aiOptions);
   const requests = papers.map((paper) => {
     const userPrompt = createUserPrompt(paper);
     console.log("systemPrompt", systemPrompt);
@@ -89,7 +90,7 @@ export async function createBatch(
       },
     };
   });
-
+  console.log("Batch requests:", requests);
   const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
   if (isDryRun) {
     console.log("Dry run mode: Batch creation skipped.");
