@@ -72,14 +72,14 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
       }
     });
   });
-  const showLogprobs = () => {
+  const shouldIncludeLogprobs = () => {
     // to support older jobs created before logprobs option was added
     if (!job?.options) {
       return true;
     }
     return job?.options?.logprobs || false;
   };
-  const showLogprobsFlag = showLogprobs();
+  const showLogprobsFlag = shouldIncludeLogprobs();
 
 
 
