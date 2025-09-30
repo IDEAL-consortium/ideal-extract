@@ -72,6 +72,16 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
       }
     });
   });
+  const shouldIncludeLogprobs = () => {
+    // to support older jobs created before logprobs option was added
+    if (!job?.options || job.options.logprobs === undefined) {
+      return true;
+    }
+    return job.options.logprobs;
+  };
+  const showLogprobsFlag = shouldIncludeLogprobs();
+
+
 
   // Get extraction results from OpenAI batch
   const results = await getBatchResults(job.batchId);
@@ -107,8 +117,10 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
         
         try {
           extracted = JSON.parse(content);
-          extracted["perplexity_score"] = logprobsAnalysis?.perplexityScore || "N/A"
-          extracted["field_logprobs"] = fieldProbs || {}
+          if (showLogprobsFlag) {
+            extracted["perplexity_score"] = logprobsAnalysis?.perplexityScore || "N/A"
+            extracted["field_logprobs"] = fieldProbs || {}
+          }
           console.log("Extracted content for paper %s: %O", paperId, extracted);
           break; // Use the first valid assistant response
         } catch (error) {
@@ -159,13 +171,17 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     ){
       mergedRow["Flags"] = stringify(extracted.flags || "");
     }
-    mergedRow["Perplexity Score"] = extracted.perplexity_score
+    if (showLogprobsFlag) {
+      mergedRow["Perplexity Score"] = extracted.perplexity_score
+    }
     mergedRow["Reasons"] = extracted.reason_for_flags || ""
     // Add custom fields
     job.fields.custom.forEach((field) => {
       const fieldKey = nameToKey(field.name);
       mergedRow[field.name] = stringify(extracted[fieldKey] || "");
-      mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
+      if (showLogprobsFlag) {
+        mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
+      }
     });
 
     return mergedRow;

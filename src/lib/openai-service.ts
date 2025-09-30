@@ -1,6 +1,6 @@
 "use client";
 
-import { CustomField, Paper } from "@/types";
+import { AIOptions, CustomField, Paper } from "@/types";
 import OpenAI from "openai";
 
 // Import prompt files
@@ -42,26 +42,37 @@ export async function cancelBatch(batchId?: string): Promise<void> {
     throw new Error("Failed to cancel batch. Please try again.");
   }
 }
+const getAIOptions = (options?: AIOptions) => {
+  return {
+    model: options?.model || "gpt-4.1",
+    logprobs: options?.logprobs || false,
+    temperature: 1,
+    max_completion_tokens: 300,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    ...(options?.logprobs && { top_logprobs: 4 })
+  }
+}
 export async function createBatch(
   papers: Paper[],
   fields: {
     design: boolean;
     method: boolean;
     custom: Array<CustomField>;
-  }
+  },
+  options: AIOptions = {}
 ) {
   const openai = getOpenAIClient();
-
   const systemPrompt = createSystemPrompt(fields);
+  const aiOptions = getAIOptions(options);
   const requests = papers.map((paper) => {
     const userPrompt = createUserPrompt(paper);
-    console.log("systemPrompt", systemPrompt);
     return {
       custom_id: `request-${paper.id}`,
       method: "POST",
       url: "/v1/chat/completions",
       body: {
-        model: "gpt-4.1",
         messages: [
           {
             role: "system",
@@ -73,17 +84,10 @@ export async function createBatch(
           },
         ],
         response_format: { type: "json_object" },
-        "temperature": 1,
-        "max_completion_tokens": 300,
-        "top_p": 1,
-        "frequency_penalty": 0,
-        "presence_penalty": 0,
-        "top_logprobs": 4,
-        "logprobs": true
+        ...aiOptions
       },
     };
   });
-
   const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
   if (isDryRun) {
     console.log("Dry run mode: Batch creation skipped.");

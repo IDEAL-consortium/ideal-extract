@@ -169,25 +169,25 @@ export function firstValueTokenLogprobByKey(
 // Suppose you already have tokens from OpenAI like:
 // const tokens = response.choices[0].logprobs!.content as LogprobToken[];
 
-const demo: LogprobToken[] = [
-  { token: "{", logprob: -0.1 },
-  { token: '"name"', logprob: -0.2 },
-  { token: ": ", logprob: -0.3 },
-  { token: '"Alice"', logprob: -0.4 },
-  { token: ", ", logprob: -0.2 },
-  { token: '"age"', logprob: -0.25 },
-  { token: ": ", logprob: -0.31 },
-  { token: "30", logprob: -0.6 },
-  { token: "}", logprob: -0.1 },
-];
+// const demo: LogprobToken[] = [
+//   { token: "{", logprob: -0.1 },
+//   { token: '"name"', logprob: -0.2 },
+//   { token: ": ", logprob: -0.3 },
+//   { token: '"Alice"', logprob: -0.4 },
+//   { token: ", ", logprob: -0.2 },
+//   { token: '"age"', logprob: -0.25 },
+//   { token: ": ", logprob: -0.31 },
+//   { token: "30", logprob: -0.6 },
+//   { token: "}", logprob: -0.1 },
+// ];
 
-// First token of the value for name (this will be the token that includes the opening quote):
-const lpName = firstValueTokenLogprobByKey(demo, "name"); // -> -0.4
+// // First token of the value for name (this will be the token that includes the opening quote):
+// const lpName = firstValueTokenLogprobByKey(demo, "name"); // -> -0.4
 
-// If you prefer to skip the opening quote for string values:
-const lpNameNoQuote = firstValueTokenLogprobByKey(demo, "name", { ignoreOpeningQuote: true }); // -> -0.4 (same token if quote+char share a token)
+// // If you prefer to skip the opening quote for string values:
+// const lpNameNoQuote = firstValueTokenLogprobByKey(demo, "name", { ignoreOpeningQuote: true }); // -> -0.4 (same token if quote+char share a token)
 
-// Non-string values work the same:
-const lpAge = firstValueTokenLogprobByKey(demo, "age"); // -> -0.6
+// // Non-string values work the same:
+// const lpAge = firstValueTokenLogprobByKey(demo, "age"); // -> -0.6
 
 

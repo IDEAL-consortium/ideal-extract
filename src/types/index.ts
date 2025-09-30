@@ -15,6 +15,12 @@ export interface Job {
   updated: Date;
   batchId?: string;
   pdfFiles?: FileList;
+  options?: AIOptions;
+}
+
+export interface AIOptions {
+  model?: string;
+  logprobs?: boolean;
 }
 
 export interface CustomField{
