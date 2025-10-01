@@ -2,7 +2,7 @@ import { ChatCompletion } from "openai/resources/index.mjs";
 import Papa from "papaparse";
 import { getFilesByJobId } from "./files-manager";
 import { getJob } from "./job-manager";
-import { getBatchResults, nameToKey } from "./openai-service";
+import { getBatchResults, nameToKey, createSystemPrompt } from "./openai-service";
 import { downloadFile } from "./utils";
 import { firstValueTokenLogprobByKey } from "./logprob";
 import { CustomField } from "@/types";
@@ -27,9 +27,10 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     throw new Error("Job not found");
   }
 
-  if (!job.batchId) {
-    throw new Error("Batch ID not found for this job");
-  }
+  const batches = (job.batches && job.batches.length > 0)
+    ? job.batches
+    : (job.batchId ? [{ model: job.options?.model || "model", batchId: job.batchId }] : []);
+  if (!batches.length) throw new Error("Batch ID not found for this job");
 
   // Get the original CSV file for this job
   const files = await getFilesByJobId(jobId);
@@ -83,16 +84,18 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
 
 
 
-  // Get extraction results from OpenAI batch
-  const results = await getBatchResults(job.batchId);
-  if (results.length === 0) {
-    throw new Error("No extraction results found for this job");
-  }
+  for (const { batchId, model } of batches) {
+    // Get extraction results from OpenAI batch
+    const results = await getBatchResults(batchId);
+    if (results.length === 0) {
+      console.warn(`No extraction results found for batch ${batchId}`);
+      continue;
+    }
 
-  // Create a map of extraction results by paper ID
-  const extractionMap = new Map<number, any>();
-  
-  for (const result of results) {
+    // Create a map of extraction results by paper ID
+    const extractionMap = new Map<number, any>();
+    
+    for (const result of results) {
     // Extract paper ID from custom_id (format: "request-{paperId}")
     const paperId = Number((result.custom_id as string).split("-").pop())
     
@@ -129,8 +132,8 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
       }
     }
     
-    extractionMap.set(paperId, extracted);
-  }
+      extractionMap.set(paperId, extracted);
+    }
 
   // Merge original CSV data with extraction results
   const originalDataWithIds = originalCsvData.map((row, index) => {
@@ -138,7 +141,7 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     const paperId = index + 1 ; // Assuming paper IDs start from 1
     return { ...row, id: paperId };
   });
-  let dataToMerge = originalDataWithIds;
+    let dataToMerge = originalDataWithIds;
 
   if (onlyProcessed) {
     // Filter original data to only include processed papers
@@ -175,23 +178,32 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
       mergedRow["Perplexity Score"] = extracted.perplexity_score
     }
     mergedRow["Reasons"] = extracted.reason_for_flags || ""
+    // Include the system prompt used
+    mergedRow["System Prompt"] = job.options?.systemPromptOverride || createSystemPrompt({
+      design: job.fields.design,
+      method: job.fields.method,
+      custom: job.fields.custom.map((f: CustomField) => ({ name: f.name, instruction: f.instruction, type: f.type }))
+    });
     // Add custom fields
     job.fields.custom.forEach((field) => {
       const fieldKey = nameToKey(field.name);
       mergedRow[field.name] = stringify(extracted[fieldKey] || "");
-      if (showLogprobsFlag) {
+      const isBooleanField = (field.type || 'boolean') === 'boolean';
+      if (showLogprobsFlag && isBooleanField) {
         mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
       }
     });
 
-    return mergedRow;
-  });
+      return mergedRow;
+    });
 
   // Create CSV content using papaparse
-  const csvContent = Papa.unparse(mergedData);
+    const csvContent = Papa.unparse(mergedData);
 
-  // Create and download the CSV file
-  downloadFile(`extracted_fields_${jobId}.csv`, csvContent, "text/csv;charset=utf-8;");
+    // Create and download the CSV file, include model in name
+    const safeModel = String(model || "model").replace(/[^a-z0-9._-]/gi, "_");
+    downloadFile(`extracted_fields_${jobId}_${safeModel}.csv`, csvContent, "text/csv;charset=utf-8;");
+  }
 }
 
 
@@ -217,6 +229,10 @@ function getCustomFieldProbs(choice: ChatCompletion.Choice, fields: Array<Custom
   const tokens = choice.logprobs.content;
   let fieldProbs: Record<string, number | undefined> = {};
   for (const field of fields) {
+    // Only compute probabilities for boolean fields
+    if ((field.type || 'boolean') !== 'boolean') {
+      continue;
+    }
     const key = nameToKey(field.name);
     const logprob = firstValueTokenLogprobByKey(tokens, key, { ignoreOpeningQuote: true });
     // convert log prob to linear prob

@@ -21,29 +21,69 @@ export const processBatch = {
     if (filteredPapers.length === 0) {
       throw new Error("No papers with full text found for batch processing.");
     }
-    // Create batch with the filtered papers
-    const batchId = await createBatch(filteredPapers, job.fields, job.options || {});
-    await updateJob(jobId, { status: "in_progress", batchId });
+    // Determine models to use (multi-model support)
+    const models: string[] = (job.options?.models && job.options.models.length > 0)
+      ? job.options.models
+      : [job.options?.model || "gpt-4.1"];
+
+    const batches: Array<{ model: string; batchId: string; status?: string; completed?: number; total?: number }> = [];
+    const computedTotal = filteredPapers.length * models.length;
+    for (const model of models) {
+      const batchId = await createBatch(filteredPapers, job.fields, { ...(job.options || {}), model });
+      batches.push({ model, batchId, total: filteredPapers.length, completed: 0, status: "in_progress" });
+    }
+
+    // Backward-compatible single batchId (first)
+    const firstBatchId = batches[0]?.batchId;
+    await updateJob(jobId, { status: "in_progress", batchId: firstBatchId, batches, total: computedTotal });
   },
 
   checkStatus: async (jobId: number) => {
     const job = await getJob(jobId);
     if (!job || !job.batchId) {
-      throw new Error("Job or batch ID not found");
+      // If multi-batch, allow missing legacy batchId as long as batches exist
+      if (!job || !job.batches || job.batches.length === 0) {
+        throw new Error("Job or batch ID not found");
+      }
     }
 
     try {
-      const batch = await getBatchStatus(job.batchId);
-      
-      // Validate progress doesn't exceed total
-      const progress = batch.request_counts?.completed || 0;
-      const validatedProgress = Math.min(progress, job.total);
-      
-      await updateJob(jobId, { 
-        status: batch.status, 
-        progress: validatedProgress,
-        updated: new Date()
-      });
+      if (job.batches && job.batches.length > 0) {
+        let summedCompleted = 0;
+        let aggregateStatus: string = "in_progress";
+        let anyFailed = false;
+        let allCompleted = true;
+        const updatedBatches = [] as typeof job.batches;
+        for (const b of job.batches) {
+          const batch = await getBatchStatus(b.batchId);
+          const completed = batch.request_counts?.completed || 0;
+          summedCompleted += completed;
+          updatedBatches.push({ ...b, status: batch.status, completed });
+          if (batch.status !== "completed") allCompleted = false;
+          if (batch.status === "failed") anyFailed = true;
+        }
+        if (anyFailed) aggregateStatus = "failed";
+        else if (allCompleted) aggregateStatus = "completed";
+        else aggregateStatus = "in_progress";
+
+        const validatedProgress = Math.min(summedCompleted, job.total);
+        await updateJob(jobId, {
+          status: aggregateStatus as any,
+          progress: validatedProgress,
+          updated: new Date(),
+          batches: updatedBatches,
+        });
+      } else {
+        const batch = await getBatchStatus(job.batchId);
+        // Validate progress doesn't exceed total
+        const progress = batch.request_counts?.completed || 0;
+        const validatedProgress = Math.min(progress, job.total);
+        await updateJob(jobId, {
+          status: batch.status as any,
+          progress: validatedProgress,
+          updated: new Date(),
+        });
+      }
     } catch (error) {
       console.error(`Failed to check status for job ${jobId}:`, error);
       // Don't update job status on API failures to avoid overwriting valid states

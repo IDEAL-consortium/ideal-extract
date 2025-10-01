@@ -14,6 +14,7 @@ export interface Job {
   created: Date;
   updated: Date;
   batchId?: string;
+  batches?: Array<{ model: string; batchId: string; status?: string; completed?: number; total?: number }>;
   pdfFiles?: FileList;
   options?: AIOptions;
 }
@@ -21,11 +22,15 @@ export interface Job {
 export interface AIOptions {
   model?: string;
   logprobs?: boolean;
+  systemPromptOverride?: string;
+  models?: string[];
+  downloadJsonl?: boolean;
 }
 
 export interface CustomField{
   name: string;
   instruction: string;
+  type?: "boolean" | "text";
   recheck_yes?: boolean;
   recheck_no?: boolean;
   force_recheck?: boolean;

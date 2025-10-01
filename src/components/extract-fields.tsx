@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,12 +22,15 @@ import { Download, Eye, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import Papa from "papaparse";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { createSystemPrompt } from "@/lib/openai-service";
+import { createSystemPrompt, listAvailableModels } from "@/lib/openai-service";
 import SystemPromptViewer from "./SystemPromptViewer";
 import { useNavigate } from 'react-router-dom';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
   const [pdfFolder, setPdfFolder] = useState<FileList | null>(null);
@@ -40,7 +44,24 @@ export default function ExtractFields() {
   const [isMatching, setIsMatching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [enableLogprobs, setEnableLogprobs] = useState(false);
+  const [downloadJsonl, setDownloadJsonl] = useState(false);
+  const [systemPromptOverride, setSystemPromptOverride] = useState<string | undefined>(undefined);
   const navigate = useNavigate();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const models = await listAvailableModels();
+        if (!cancelled && models && models.length) {
+          setAvailableModels(models);
+          setSelectedModels([models[0]]);
+        }
+      } catch (e) {
+        console.error("Failed to load models", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
 
   const validateCsvColumns = (csvData: string): Promise<boolean> => {
@@ -247,6 +268,11 @@ export default function ExtractFields() {
       return;
     }
 
+    if (!selectedModels || selectedModels.length === 0) {
+      toast.error("Please select at least one model.");
+      return;
+    }
+
     if (mode === "fulltext" && (!pdfFolder || pdfFolder.length === 0)) {
       toast.error("Please select a folder with PDF files for full text mode.");
       return;
@@ -261,79 +287,86 @@ export default function ExtractFields() {
         custom: customFields.map((field) => ({
           name: field.name,
           instruction: field.instruction,
+          type: field.type || "boolean",
           recheck_yes: field.recheck_yes || false,
           recheck_no: field.recheck_no || false,
           force_recheck: field.force_recheck || false,
         })),
       };
-      // Create and start the job
 
-      // Process the CSV file
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        if (event.target?.result) {
-          const csvData = event.target.result as string;
-          const results = await new Promise<Papa.ParseResult<any>>(
-            (resolve, reject) => {
-              Papa.parse(csvData, {
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => resolve(results),
-                error: (error: any) => reject(error),
-              });
-            }
-          );
+      // Read and parse the CSV file
+      const csvData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            resolve(event.target.result as string);
+          } else {
+            reject(new Error("Failed to read CSV file"));
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
 
-          const papers = (results.data as any[]).map((row, index) => {
-            // Create a case-insensitive mapping of the row data
-            const normalizedRow: { [key: string]: string } = {};
-            Object.keys(row).forEach(key => {
-              normalizedRow[key.toLowerCase()] = row[key] || "";
-            });
-
-            return {id : index+1, ...normalizedRow} as PaperWithFields
-          }) as PaperWithFields[];
-          const job = await createJob({
-            filename: file.name,
-            mode,
-            fields,
-            status: "in_progress",
-            progress: 0,
-            total: papers.length,
-            created: new Date(),
-            updated: new Date(),
-            options:{
-              logprobs: enableLogprobs
-            }
+      const results = await new Promise<Papa.ParseResult<any>>(
+        (resolve, reject) => {
+          Papa.parse(csvData, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => resolve(results),
+            error: (error: any) => reject(error),
           });
-          try {
-
-            await addFile(job.id, file, file.name);
-            const pdfParams = mode === "fulltext" ? {
-              pdfData: Array.from(pdfData),
-              matches: pdfMatches,
-            } : undefined;
-            await processBatch.start(job.id, papers, pdfParams); // Process first 10 papers
-  
-            toast("Job started. Your extraction job has been started.");
-            // go to job management page
-          }
-          catch (error) {
-            // update job status to failed
-            await updateJob(job.id, {
-              status: "failed",
-            });
-            console.error("Error creating or starting job:", error);
-            toast.error("Error creating or starting the extraction job");
-          }
-          navigate('/job-management');
-
         }
-      };
-      reader.readAsText(file);
+      );
+
+      const papers = (results.data as any[]).map((row, index) => {
+        // Create a case-insensitive mapping of the row data
+        const normalizedRow: { [key: string]: string } = {};
+        Object.keys(row).forEach(key => {
+          normalizedRow[key.toLowerCase()] = row[key] || "";
+        });
+
+        return {id : index+1, ...normalizedRow} as PaperWithFields
+      }) as PaperWithFields[];
+
+      const job = await createJob({
+        filename: file.name,
+        mode,
+        fields,
+        status: "in_progress",
+        progress: 0,
+        total: papers.length * (selectedModels.length || 1),
+        created: new Date(),
+        updated: new Date(),
+        options:{
+          logprobs: enableLogprobs,
+          model: selectedModels[0],
+          models: selectedModels,
+          downloadJsonl: downloadJsonl
+        }
+      });
+
+      try {
+        await addFile(job.id, file, file.name);
+        const pdfParams = mode === "fulltext" ? {
+          pdfData: Array.from(pdfData),
+          matches: pdfMatches,
+        } : undefined;
+        await processBatch.start(job.id, papers, pdfParams);
+
+        toast.success("Job started successfully!");
+        navigate('/job-management');
+      } catch (error) {
+        // update job status to failed
+        await updateJob(job.id, {
+          status: "failed",
+        });
+        console.error("Error creating or starting job:", error);
+        toast.error("Error creating or starting the extraction job");
+      }
     } catch (error) {
       console.error("Error starting job:", error);
-      toast("Failed to start extraction job");
+      toast.error("Failed to start extraction job");
     } finally {
       setIsSubmitting(false);
     }
@@ -382,6 +415,61 @@ export default function ExtractFields() {
             <Label htmlFor="fulltext">Full Text (Requires PDF download)</Label>
           </div>
         </RadioGroup>
+      </div>
+
+      <Separator />
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-medium">Model</h3>
+          <p className="text-sm text-muted-foreground">Choose one or more OpenAI models</p>
+        </div>
+        <div className="grid w-full gap-2">
+          <Label className="text-xs">OpenAI Models</Label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            {availableModels.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Loading models…</p>
+            ) : (
+              availableModels.map((m) => {
+                const checked = selectedModels.includes(m);
+                return (
+                  <label key={m} className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      id={`model-${m}`}
+                      checked={checked}
+                      onCheckedChange={(v) => {
+                        setSelectedModels((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add(m); else next.delete(m);
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>{m}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">You can run the same job across multiple models. Progress reflects all batches. Note: not all models support log probabilities; enable logprobs only if all selected models support it.</p>
+          <div className="flex flex-col gap-2 mt-2">
+            <div className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                id="logprobs"
+                checked={enableLogprobs}
+                onCheckedChange={(checked) => setEnableLogprobs(checked === true)}
+              />
+              <Label htmlFor="logprobs" className="text-sm">Enable Log Probabilities</Label>
+            </div>
+            <div className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                id="downloadJsonl"
+                checked={downloadJsonl}
+                onCheckedChange={(checked) => setDownloadJsonl(checked === true)}
+              />
+              <Label htmlFor="downloadJsonl" className="text-sm">Download JSONL files for inspection</Label>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Separator />
@@ -538,13 +626,15 @@ export default function ExtractFields() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium">
-              Custom Fields (Yes/No Questions)
+              Custom Fields
             </h4>
             <div className="flex items-center gap-2">
               <SystemPromptViewer
                 extractDesign={extractDesign}
                 extractMethod={extractMethod}
                 customFields={customFields}
+                overridePrompt={systemPromptOverride}
+                onSave={(value) => setSystemPromptOverride(value)}
               />
               <Button
                 type="button"
@@ -587,95 +677,122 @@ export default function ExtractFields() {
             style={{ display: 'none' }}
           />
 
-          {customFields.map((field, index) => (
-            <div
-              key={index}
-              className="space-y-3 p-4 border rounded-lg"
-            >
-              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
-                <div>
-                  <Label htmlFor={`field-name-${index}`} className="text-xs">
-                    Column Title
-                  </Label>
-                  <Input
-                    id={`field-name-${index}`}
-                    value={field.name}
-                    onChange={(e) =>
-                      updateCustomField(index, "name", e.target.value)
-                    }
-                    placeholder="e.g., Has Control Group"
-                  />
-                </div>
-                <div>
-                  <Label
-                    htmlFor={`field-instruction-${index}`}
-                    className="text-xs"
-                  >
-                    Instruction
-                  </Label>
-                  <Input
-                    id={`field-instruction-${index}`}
-                    value={field.instruction}
-                    onChange={(e) =>
-                      updateCustomField(index, "instruction", e.target.value)
-                    }
-                    placeholder="e.g., Does the paper include a control group?"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="mt-5 cursor-pointer"
-                  onClick={() => removeCustomField(index)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {mode == "fulltext" && <div className="space-y-2">
-                <Label className="text-xs font-medium">Options (select one)</Label>
-                <div className="flex flex-wrap gap-4">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`recheck-yes-${index}`}
-                      checked={field.recheck_yes || false}
-                      onCheckedChange={(checked) =>
-                        updateCustomField(index, "recheck_yes", checked === true)
-                      }
-                    />
-                    <Label htmlFor={`recheck-yes-${index}`} className="text-xs">
-                      Recheck Yes
-                    </Label>
+          <Accordion type="multiple" className="w-full">
+            {customFields.map((field, index) => (
+              <AccordionItem key={index} value={`field-${index}`}>
+                <AccordionTrigger>
+                  <div className="flex items-center justify-between w-full pr-2">
+                    <div className="text-left">
+                      <div className="text-sm font-medium">{field.name || `Custom Field ${index + 1}`}</div>
+                      <div className="text-xs text-muted-foreground">{(field.type || "boolean").toUpperCase()}</div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="ml-2"
+                      onClick={(e) => { e.preventDefault(); removeCustomField(index); }}
+                      title="Remove field"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`recheck-no-${index}`}
-                      checked={field.recheck_no || false}
-                      onCheckedChange={(checked) =>
-                        updateCustomField(index, "recheck_no", checked === true)
-                      }
-                    />
-                    <Label htmlFor={`recheck-no-${index}`} className="text-xs">
-                      Recheck No
-                    </Label>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-3 p-4 border rounded-lg">
+                    <div className="grid grid-cols-[1fr_1fr] gap-2 items-start">
+                      <div>
+                        <Label htmlFor={`field-name-${index}`} className="text-xs">
+                          Column Title
+                        </Label>
+                        <Input
+                          id={`field-name-${index}`}
+                          value={field.name}
+                          onChange={(e) =>
+                            updateCustomField(index, "name", e.target.value)
+                          }
+                          placeholder="e.g., Has Control Group"
+                        />
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`field-instruction-${index}`}
+                          className="text-xs"
+                        >
+                          Instruction
+                        </Label>
+                        <Input
+                          id={`field-instruction-${index}`}
+                          value={field.instruction}
+                          onChange={(e) =>
+                            updateCustomField(index, "instruction", e.target.value)
+                          }
+                          placeholder="e.g., Does the paper include a control group?"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[1fr] gap-2 items-start">
+                      <div>
+                        <Label htmlFor={`field-type-${index}`} className="text-xs">
+                          Field Type
+                        </Label>
+                        <Select value={field.type || "boolean"} onValueChange={(v) => updateCustomField(index, "type", v)}>
+                          <SelectTrigger id={`field-type-${index}`}>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="boolean">Yes/No/Maybe</SelectItem>
+                            <SelectItem value="text">Free Text</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    {mode == "fulltext" && (field.type || "boolean") === "boolean" && <div className="space-y-2">
+                      <Label className="text-xs font-medium">Options (select one)</Label>
+                      <div className="flex flex-wrap gap-4">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`recheck-yes-${index}`}
+                            checked={field.recheck_yes || false}
+                            onCheckedChange={(checked) =>
+                              updateCustomField(index, "recheck_yes", checked === true)
+                            }
+                          />
+                          <Label htmlFor={`recheck-yes-${index}`} className="text-xs">
+                            Recheck Yes
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`recheck-no-${index}`}
+                            checked={field.recheck_no || false}
+                            onCheckedChange={(checked) =>
+                              updateCustomField(index, "recheck_no", checked === true)
+                            }
+                          />
+                          <Label htmlFor={`recheck-no-${index}`} className="text-xs">
+                            Recheck No
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`force-recheck-${index}`}
+                            checked={field.force_recheck || false}
+                            onCheckedChange={(checked) =>
+                              updateCustomField(index, "force_recheck", checked === true)
+                            }
+                          />
+                          <Label htmlFor={`force-recheck-${index}`} className="text-xs">
+                            Force Recheck
+                          </Label>
+                        </div>
+                      </div>
+                    </div>}
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`force-recheck-${index}`}
-                      checked={field.force_recheck || false}
-                      onCheckedChange={(checked) =>
-                        updateCustomField(index, "force_recheck", checked === true)
-                      }
-                    />
-                    <Label htmlFor={`force-recheck-${index}`} className="text-xs">
-                      Force Recheck
-                    </Label>
-                  </div>
-                </div>
-              </div>}
-            </div>
-          ))}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </div>
       </div>
 
