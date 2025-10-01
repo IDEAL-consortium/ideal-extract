@@ -26,13 +26,14 @@ export function useCustomFields() {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
   const addCustomField = () => {
-    setCustomFields([...customFields, { 
+    setCustomFields([{ 
       name: "", 
       instruction: "",
+      type: "boolean",
       recheck_yes: false,
       recheck_no: false,
       force_recheck: false
-    }]);
+    }, ...customFields]);
   };
 
   const removeCustomField = (index: number) => {
@@ -41,12 +42,20 @@ export function useCustomFields() {
 
   const updateCustomField = (
     index: number,
-    field: "name" | "instruction" | "recheck_yes" | "recheck_no" | "force_recheck",
+    field: "name" | "instruction" | "type" | "recheck_yes" | "recheck_no" | "force_recheck",
     value: string | boolean
   ) => {
     const updatedFields = [...customFields];
     if (field === "name" || field === "instruction") {
       (updatedFields[index] as any)[field] = value as string;
+    } else if (field === "type") {
+      (updatedFields[index] as any)[field] = value as string;
+      // When switching to text type, clear boolean-only flags
+      if (value === "text") {
+        updatedFields[index].recheck_yes = false;
+        updatedFields[index].recheck_no = false;
+        updatedFields[index].force_recheck = false;
+      }
     } else {
       // Handle mutual exclusivity for the three options
       if (value === true) {
@@ -88,6 +97,7 @@ export function useCustomFields() {
         const validFields = jsonData.customFields.every((field: any) =>
           typeof field.name === 'string' && 
           typeof field.instruction === 'string' &&
+          (field.type === undefined || field.type === 'boolean' || field.type === 'text') &&
           (field.recheck_yes === undefined || typeof field.recheck_yes === 'boolean') &&
           (field.recheck_no === undefined || typeof field.recheck_no === 'boolean') &&
           (field.force_recheck === undefined || typeof field.force_recheck === 'boolean')
@@ -98,7 +108,15 @@ export function useCustomFields() {
           return;
         }
 
-        setCustomFields(jsonData.customFields);
+        const normalizedFields: CustomField[] = jsonData.customFields.map((f: any) => ({
+          name: f.name,
+          instruction: f.instruction,
+          type: f.type === 'text' ? 'text' : 'boolean',
+          recheck_yes: f.type === 'text' ? false : !!f.recheck_yes,
+          recheck_no: f.type === 'text' ? false : !!f.recheck_no,
+          force_recheck: f.type === 'text' ? false : !!f.force_recheck,
+        }));
+        setCustomFields(normalizedFields);
         toast.success(`Successfully imported ${jsonData.customFields.length} custom fields`);
       } catch (error) {
         toast.error("Invalid JSON file format");

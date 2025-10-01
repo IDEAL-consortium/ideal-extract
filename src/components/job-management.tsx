@@ -86,8 +86,14 @@ export default function JobManagement() {
       await deleteJob(job.id);
       setJobs(jobs.filter((j) => j.id !== job.id));
       toast("Job deleted successfully");
-      if (job.status !== "completed" && job.batchId) {
-        cancelBatch(job.batchId); // Optionally cancel the batch if needed
+      if (job.status !== "completed") {
+        if (job.batches && job.batches.length > 0) {
+          for (const b of job.batches) {
+            try { await cancelBatch(b.batchId); } catch {}
+          }
+        } else if (job.batchId) {
+          try { await cancelBatch(job.batchId); } catch {}
+        }
       }
     } catch (error) {
       console.error("Error deleting job:", error);
@@ -116,109 +122,128 @@ export default function JobManagement() {
     return <div className="text-center py-4">No extraction jobs found</div>;
   }
 
+  const handleDownloadBatch = async (jobId: number, batchId: string, model: string, onlyProcessed: boolean) => {
+    try {
+      const job = await getJob(jobId);
+      if (!job) {
+        toast("Job not found");
+        return;
+      }
+
+      await downloadCSV(jobId, onlyProcessed);
+      toast(`Results for ${model} downloaded successfully`);
+    } catch (error) {
+      console.error("Error downloading results:", error);
+      toast("Failed to download results");
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {jobs.map((job) => (
-        <div key={job.id} className="border rounded-lg p-4 space-y-3">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="font-medium">{job.filename}</h3>
-              <p className="text-sm text-muted-foreground">
-                Created: {new Date(job.created).toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Status: {job.status.split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
-              </p>
-            </div>
-            <div className="flex items-center space-x-2">
-              {["validating", "in_progress", "finalizing", "canceling"].includes(job.status) && (
+      {jobs.map((job) => {
+        const batches = (job.batches && job.batches.length > 0) 
+          ? job.batches 
+          : job.batchId 
+            ? [{ model: job.options?.model || "default", batchId: job.batchId, status: job.status, completed: job.progress, total: job.total }]
+            : [];
+        
+        return (
+          <div key={job.id} className="border rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-medium">{job.filename}</h3>
+                <p className="text-sm text-muted-foreground">
+                  Created: {new Date(job.created).toLocaleString()}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Mode: {job.mode === "fulltext" ? "Full Text" : "Abstract Only"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleCheckStatus(job.id)}
-                  disabled={checkingStatus.has(job.id)}
+                  disabled={job.status !== "completed"}
+                  onClick={() => handleDownloadCustomFields(job.id)}
                 >
-                  <RefreshCw className={`h-4 w-4 mr-1 ${checkingStatus.has(job.id) ? 'animate-spin' : ''}`} /> 
-                  {checkingStatus.has(job.id) ? 'Checking...' : 'Check Status'}
+                  <Download className="h-4 w-4 mr-1" /> Custom Fields
                 </Button>
-              )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={job.status !== "completed"}
-                onClick={() => handleDownloadCustomFields(job.id)}
-              >
-                <Download className="h-4 w-4 mr-1" /> Download Custom Fields
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDeleteJob(job)}
+                  title="Delete entire job"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={job.status !== "completed"}
-                onClick={() => handleDownload(job.id, true)}
-              >
-                <Download className="h-4 w-4 mr-1" /> Download only processed results
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={job.status !== "completed"}
-                onClick={() => handleDownload(job.id, false)}
-              >
-                <Download className="h-4 w-4 mr-1" /> Download All papers
-              </Button>
+            <div className="space-y-3 mt-4">
+              {batches.map((batch) => (
+                <div key={batch.batchId} className="border-l-2 border-primary/20 pl-4 py-2 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-medium">{batch.model}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Status: {(batch.status || 'in_progress').split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {["validating", "in_progress", "finalizing", "canceling"].includes(batch.status || job.status) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCheckStatus(job.id)}
+                          disabled={checkingStatus.has(job.id)}
+                        >
+                          <RefreshCw className={`h-4 w-4 mr-1 ${checkingStatus.has(job.id) ? 'animate-spin' : ''}`} /> 
+                          {checkingStatus.has(job.id) ? 'Checking...' : 'Check Status'}
+                        </Button>
+                      )}
 
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleDeleteJob(job)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={(batch.status || job.status) !== "completed"}
+                        onClick={() => handleDownloadBatch(job.id, batch.batchId, batch.model, true)}
+                      >
+                        <Download className="h-4 w-4 mr-1" /> Processed
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={(batch.status || job.status) !== "completed"}
+                        onClick={() => handleDownloadBatch(job.id, batch.batchId, batch.model, false)}
+                      >
+                        <Download className="h-4 w-4 mr-1" /> All
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span>
+                        Progress: {batch.completed ?? 0} of {batch.total ?? job.total}
+                      </span>
+                      <span>
+                        {(batch.total ?? job.total) > 0
+                          ? Math.round(((batch.completed ?? 0) / (batch.total ?? job.total)) * 100)
+                          : 0}
+                        %
+                      </span>
+                    </div>
+                    <Progress
+                      value={(batch.total ?? job.total) > 0 ? ((batch.completed ?? 0) / (batch.total ?? job.total)) * 100 : 0}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-sm">
-              <span>
-                Progress: {job.progress} of {job.total}
-              </span>
-              <span>
-                {job.total > 0
-                  ? Math.round((job.progress / job.total) * 100)
-                  : 0}
-                %
-              </span>
-            </div>
-            <Progress
-              value={job.total > 0 ? (job.progress / job.total) * 100 : 0}
-            />
-          </div>
-
-          {/* <div className="text-sm">
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                job.status === "completed"
-                  ? "bg-green-100 text-green-800"
-                  : job.status === "in_progress"
-                  ? "bg-blue-100 text-blue-800"
-                  : job.status === ""
-                  ? "bg-yellow-100 text-yellow-800"
-                  : "bg-gray-100 text-gray-800"
-              }`}
-            >
-              {job.status === "in_progress"
-                ? "In Progress"
-                : job.status === "completed"
-                ? "Completed"
-                : job.status === "paused"
-                ? "Paused"
-                : "Pending"}
-            </span>
-          </div> */}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -30,6 +30,20 @@ function getOpenAIClient(): OpenAI {
   return openAIClient;
 }
 
+// Cache helper for models list
+type ModelsCache = { models: string[]; cachedAt: number };
+
+export async function listAvailableModels(forceRefresh: boolean = false): Promise<string[]> {
+  // Hardcoded list of supported models
+  return [
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+  ];
+}
+
 export async function cancelBatch(batchId?: string): Promise<void> {
   if (!batchId) {
     throw new Error("Batch ID is required to cancel the batch.");
@@ -43,8 +57,21 @@ export async function cancelBatch(batchId?: string): Promise<void> {
   }
 }
 const getAIOptions = (options?: AIOptions) => {
+  const model = options?.model || "gpt-4.1";
+  const isGpt5 = model.toLowerCase().startsWith("gpt-5");
+  
+  // GPT-5 models have stricter parameter requirements
+  if (isGpt5) {
+    return {
+      model,
+      // Only include logprobs for GPT-5 if explicitly requested
+      ...(options?.logprobs && { logprobs: true, top_logprobs: 4 })
+    };
+  }
+  
+  // GPT-4 models support full parameter set
   return {
-    model: options?.model || "gpt-4.1",
+    model,
     logprobs: options?.logprobs || false,
     temperature: 1,
     max_completion_tokens: 300,
@@ -52,7 +79,7 @@ const getAIOptions = (options?: AIOptions) => {
     frequency_penalty: 0,
     presence_penalty: 0,
     ...(options?.logprobs && { top_logprobs: 4 })
-  }
+  };
 }
 export async function createBatch(
   papers: Paper[],
@@ -64,7 +91,7 @@ export async function createBatch(
   options: AIOptions = {}
 ) {
   const openai = getOpenAIClient();
-  const systemPrompt = createSystemPrompt(fields);
+  const systemPrompt = options.systemPromptOverride?.trim()?.length ? options.systemPromptOverride! : createSystemPrompt(fields);
   const aiOptions = getAIOptions(options);
   const requests = papers.map((paper) => {
     const userPrompt = createUserPrompt(paper);
@@ -89,14 +116,22 @@ export async function createBatch(
     };
   });
   const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
+  const safeModel = (aiOptions.model || "model").replace(/[^a-z0-9._-]/gi, "_");
+  
+  // Download JSONL if requested
+  if (options.downloadJsonl) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadFile(`batch_${safeModel}_${timestamp}.jsonl`, jsonl, "application/jsonl");
+  }
+  
   if (isDryRun) {
     console.log("Dry run mode: Batch creation skipped.");
-    // Download the batch.jsonl file in dry run mode
-    downloadFile("batch.jsonl", jsonl, "application/jsonl");
+    downloadFile(`batch_${safeModel}.jsonl`, jsonl, "application/jsonl");
     return "dry-run-batch-id";
   }
+  
   const file = await openai.files.create({
-    file: new File([jsonl], "batch.jsonl", { type: "application/jsonl" }),
+    file: new File([jsonl], `batch_${safeModel}.jsonl`, { type: "application/jsonl" }),
     purpose: "batch",
   });
 
@@ -140,7 +175,7 @@ export function createSystemPrompt(
   fields: {
     design: boolean;
     method: boolean;
-    custom: Array<{ name: string; instruction: string }>;
+    custom: Array<{ name: string; instruction: string; type?: "boolean" | "text" }>;
   }
 ): string {
   // Start with the base prompt
@@ -157,12 +192,24 @@ export function createSystemPrompt(
   prompt += "\n\n" + flagsPrompt;
 
   if (fields.custom && fields.custom.length > 0) {
-    prompt += "\n\n" + "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
+    const booleanFields = fields.custom.filter((f) => (f.type || "boolean") === "boolean");
+    const textFields = fields.custom.filter((f) => (f.type || "boolean") === "text");
 
-    const fieldprompts = fields.custom.map((field) => {
-      return `Field Key : ${nameToKey(field.name)} \nInstruction: ${field.instruction}`;
-    });
-    prompt += fieldprompts.join("\n\n");
+    if (booleanFields.length > 0) {
+      prompt += "\n\n" + "For the following fields follow the instruction closely and provide a yes/no/maybe answer. An answer should be based on the content of the paper. If you are not sure output should be maybe\n";
+      const fieldprompts = booleanFields.map((field) => {
+        return `Field Key : ${nameToKey(field.name)} \nInstruction: ${field.instruction}`;
+      });
+      prompt += fieldprompts.join("\n\n");
+    }
+
+    if (textFields.length > 0) {
+      prompt += "\n\n" + "For the following fields follow the instruction closely and provide a concise free-text answer based only on the paper content. Keep answers short and factual.\n";
+      const textPrompts = textFields.map((field) => {
+        return `Field Key : ${nameToKey(field.name)} \nInstruction: ${field.instruction}`;
+      });
+      prompt += textPrompts.join("\n\n");
+    }
   }
   prompt += "\n\n" + "Output should be a JSON object with the following keys and nothing else:";
   prompt += "\n" + keys.map((key) => `- ${key}`).join("\n") + "\n\n";

@@ -24,7 +24,7 @@ type Thresholds = {
 
 type CriteriaThresholds = Record<CriterionKey, Thresholds>;
 
-type LlmPair = { id: string; labelCol: string; probCol: string; display: string };
+type LlmPair = { id: string; labelCol: string; probCol?: string; display: string };
 type Mapping = Record<string, {
   include: boolean;
   humanColumn?: string;
@@ -139,14 +139,26 @@ function parseNumber(value: any): number | undefined {
 
 // Local storage helpers
 type PersistedMapping = {
-  signature: { llmPairs: Array<{ labelCol: string; probCol: string }>; header: string[] };
+  signature: { llmPairs: Array<{ labelCol: string; probCol?: string }>; header: string[] };
   mapping: Mapping;
   filters?: Record<string, RowFilter>;
 };
 
-function pairsSignature(pairs: LlmPair[]): Array<{ labelCol: string; probCol: string }> {
+type SavedMapping = {
+  id: string;
+  filename: string;
+  displayName: string;
+  includedColumnCount: number;
+  withProbabilitiesCount: number;
+  lastUsed: string;
+  mapping: Mapping;
+  filters: Record<string, RowFilter>;
+  llmPairs: Array<{ labelCol: string; probCol?: string }>;
+};
+
+function pairsSignature(pairs: LlmPair[]): Array<{ labelCol: string; probCol?: string }> {
   return pairs.map(p => ({ labelCol: p.labelCol, probCol: p.probCol }))
-    .sort((a, b) => (a.labelCol + '|' + a.probCol).localeCompare(b.labelCol + '|' + b.probCol));
+    .sort((a, b) => (a.labelCol + '|' + (a.probCol || '')).localeCompare(b.labelCol + '|' + (b.probCol || '')));
 }
 
 function isCompatibleSignature(prev: PersistedMapping["signature"], header: string[], pairs: LlmPair[]): boolean {
@@ -154,7 +166,7 @@ function isCompatibleSignature(prev: PersistedMapping["signature"], header: stri
   const currPairs = pairsSignature(pairs);
   if (prevPairs.length !== currPairs.length) return false;
   for (let i = 0; i < prevPairs.length; i++) {
-    if (prevPairs[i].labelCol !== currPairs[i].labelCol || prevPairs[i].probCol !== currPairs[i].probCol) {
+    if (prevPairs[i].labelCol !== currPairs[i].labelCol || (prevPairs[i].probCol || '') !== (currPairs[i].probCol || '')) {
       return false;
     }
   }
@@ -194,6 +206,66 @@ function savePersistedMapping(header: string[], pairs: LlmPair[], mapping: Mappi
   };
   try {
     localStorage.setItem("llmEvalMapping", JSON.stringify(payload));
+  } catch {}
+}
+
+function getAllSavedMappings(): SavedMapping[] {
+  try {
+    const raw = localStorage.getItem("llmEvalSavedMappings");
+    if (!raw) return [];
+    return JSON.parse(raw) as SavedMapping[];
+  } catch {
+    return [];
+  }
+}
+
+function generateMappingId(mapping: Mapping, pairs: Array<{ labelCol: string; probCol?: string }>): string {
+  const sig = JSON.stringify({ mapping, pairs: pairsSignature(pairs.map(p => ({ id: p.labelCol, labelCol: p.labelCol, probCol: p.probCol, display: p.labelCol }))) });
+  return btoa(sig).slice(0, 32);
+}
+
+function saveToMappingLibrary(filename: string, mapping: Mapping, filters: Record<string, RowFilter>, pairs: LlmPair[]) {
+  const includedPairs = pairs.filter(p => mapping[p.id]?.include);
+  const withProbs = includedPairs.filter(p => p.probCol !== undefined).length;
+  const llmPairsSig = pairsSignature(includedPairs);
+  const id = generateMappingId(mapping, llmPairsSig);
+  
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB').replace(/\//g, '/');
+  const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
+  const displayName = `${dateStr}_${timeStr}_${includedPairs.length}cols_${withProbs}withprobs`;
+  
+  const savedMappings = getAllSavedMappings();
+  const existingIndex = savedMappings.findIndex(m => m.id === id);
+  
+  const newMapping: SavedMapping = {
+    id,
+    filename,
+    displayName,
+    includedColumnCount: includedPairs.length,
+    withProbabilitiesCount: withProbs,
+    lastUsed: now.toISOString(),
+    mapping,
+    filters,
+    llmPairs: llmPairsSig,
+  };
+  
+  if (existingIndex >= 0) {
+    savedMappings[existingIndex] = newMapping;
+  } else {
+    savedMappings.push(newMapping);
+  }
+  
+  try {
+    localStorage.setItem("llmEvalSavedMappings", JSON.stringify(savedMappings));
+  } catch {}
+}
+
+function deleteSavedMapping(id: string) {
+  const savedMappings = getAllSavedMappings();
+  const filtered = savedMappings.filter(m => m.id !== id);
+  try {
+    localStorage.setItem("llmEvalSavedMappings", JSON.stringify(filtered));
   } catch {}
 }
 
@@ -264,15 +336,32 @@ export default function LlmEval() {
   const [detailMeta, setDetailMeta] = useState<{ criterion: string; bucket: 'tp' | 'tn' | 'fp' | 'fn'; indices: number[] } | null>(null);
   const [filtersByCriterion, setFiltersByCriterion] = useState<Record<string, RowFilter>>({});
   const [reportName, setReportName] = useState<string>("LLM Eval Report");
+  const [manualColumnSelection, setManualColumnSelection] = useState<string>("");
+  const [modelName, setModelName] = useState<string>("");
+  const [savedMappings, setSavedMappings] = useState<SavedMapping[]>([]);
+  const [selectedSavedMapping, setSelectedSavedMapping] = useState<string>("");
+  const [uploadedFilename, setUploadedFilename] = useState<string>("");
 
   const humanColumnOptions = useMemo(() => {
     const llmCols = new Set<string>();
     for (const p of llmPairs) {
       llmCols.add(p.labelCol);
-      llmCols.add(p.probCol);
+      if (p.probCol) llmCols.add(p.probCol);
     }
     return header.filter((h) => !llmCols.has(h));
   }, [header, llmPairs]);
+
+  const availableColumnsForManualSelection = useMemo(() => {
+    const llmCols = new Set<string>();
+    for (const p of llmPairs) {
+      // Only exclude columns that are currently included
+      if (mapping[p.id]?.include !== false) {
+        llmCols.add(p.labelCol);
+        if (p.probCol) llmCols.add(p.probCol);
+      }
+    }
+    return header.filter((h) => !llmCols.has(h));
+  }, [header, llmPairs, mapping]);
 
   const parsed = useMemo(() => {
     if (!rows.length || !header.length) return null;
@@ -327,11 +416,11 @@ export default function LlmEval() {
         const labelCol = pair.labelCol;
         const probCol = pair.probCol;
         const rawLabel = String(row[labelCol] ?? "");
-        const rawProb = parseNumber(row[probCol]);
+        const rawProb = probCol ? parseNumber(row[probCol]) : undefined;
         const llmMapped = mapping[c]?.llmValueMap?.[rawLabel];
         let base: boolean | null = llmMapped !== undefined ? (llmMapped === "include") : coerceLlmLabelToBoolean(rawLabel);
-        const thr = thresholds[c] || { yesMaybeMinProb: 0.5, noMinProb: 0.5 };
-        const finalVal = applyThresholds(base, rawProb, thr, rawLabel);
+        // Only apply thresholds if probCol exists
+        const finalVal = probCol ? applyThresholds(base, rawProb, thresholds[c] || { yesMaybeMinProb: 0.5, noMinProb: 0.5 }, rawLabel) : base;
         predByCriterion[c].push(finalVal === null ? false : finalVal);
       }
     }
@@ -414,7 +503,24 @@ export default function LlmEval() {
     });
   }, [llmPairs, mapping, rows]);
 
+  useEffect(() => {
+    setSavedMappings(getAllSavedMappings());
+  }, []);
+
+  function extractModelFromFilename(filename: string): string {
+    // Pattern: extracted_fields_{jobId}_{modelName}.csv
+    const match = filename.match(/extracted_fields_\d+_(.+)\.csv$/i);
+    if (match && match[1]) {
+      return match[1];
+    }
+    return "";
+  }
+
   function handleFile(file: File) {
+    const extractedModel = extractModelFromFilename(file.name);
+    setModelName(extractedModel);
+    setUploadedFilename(file.name);
+    
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -457,9 +563,122 @@ export default function LlmEval() {
     });
   }
 
+  function handleExportMapping() {
+    const exportData = {
+      mapping,
+      filters: filtersByCriterion,
+      llmPairs: pairsSignature(llmPairs),
+      exportedAt: new Date().toISOString(),
+    };
+    downloadJson("llm-eval-mapping.json", exportData);
+  }
+
+  function handleImportMappingFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        applyImportedMapping(data);
+      } catch (err) {
+        console.error("Failed to parse mapping file:", err);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function applyImportedMapping(data: any) {
+    if (!data?.mapping || !data?.llmPairs) return;
+    
+    // Check compatibility: all llmPairs from import must exist in current data
+    const currentPairIds = new Set(llmPairs.map(p => p.id));
+    const importedPairs = data.llmPairs as Array<{ labelCol: string; probCol?: string }>;
+    const importedMapping = data.mapping as Mapping;
+    
+    // Only apply mapping for pairs that exist
+    const compatibleMapping: Mapping = {};
+    for (const [key, value] of Object.entries(importedMapping)) {
+      if (currentPairIds.has(key)) {
+        compatibleMapping[key] = value;
+      }
+    }
+    
+    if (Object.keys(compatibleMapping).length === 0) {
+      console.warn("Imported mapping not compatible with current data");
+      return;
+    }
+    
+    setMapping((prev) => ({ ...prev, ...compatibleMapping }));
+    if (data.filters) {
+      setFiltersByCriterion((prev) => ({ ...prev, ...data.filters }));
+    }
+  }
+
+  function handleApplySavedMapping() {
+    if (!selectedSavedMapping) return;
+    const saved = savedMappings.find(m => m.id === selectedSavedMapping);
+    if (!saved) return;
+    
+    applyImportedMapping({
+      mapping: saved.mapping,
+      filters: saved.filters,
+      llmPairs: saved.llmPairs,
+    });
+    setSelectedSavedMapping("");
+  }
+
+  function handleDeleteSavedMapping(id: string) {
+    deleteSavedMapping(id);
+    setSavedMappings(getAllSavedMappings());
+    if (selectedSavedMapping === id) {
+      setSelectedSavedMapping("");
+    }
+  }
+
+  function handleConfirmMapping() {
+    savePersistedMapping(header, llmPairs, mapping, filtersByCriterion);
+    saveToMappingLibrary(uploadedFilename || "unknown.csv", mapping, filtersByCriterion, llmPairs);
+    setSavedMappings(getAllSavedMappings());
+    setIsMappingOpen(false);
+    setMappingConfirmed(true);
+  }
+
+  function handleAddManualColumn() {
+    if (!manualColumnSelection) return;
+    
+    // Check if this column already exists in llmPairs
+    const existingPair = llmPairs.find(p => p.id === manualColumnSelection);
+    
+    if (existingPair) {
+      // If it exists, just set include to true
+      setMapping((prev) => ({
+        ...prev,
+        [existingPair.id]: { ...prev[existingPair.id], include: true },
+      }));
+    } else {
+      // If it doesn't exist, create a new pair
+      const newPair: LlmPair = {
+        id: manualColumnSelection,
+        labelCol: manualColumnSelection,
+        probCol: undefined,
+        display: manualColumnSelection,
+      };
+      setLlmPairs((prev) => [newPair, ...prev]);
+      setMapping((prev) => ({
+        ...prev,
+        [newPair.id]: { include: true, humanColumn: undefined, humanValueMap: {}, llmValueMap: {} },
+      }));
+    }
+    
+    setSelectedCriteria((prev) => ({ ...prev, [manualColumnSelection]: true }));
+    setManualColumnSelection("");
+  }
+
   function handleExport() {
     if (!parsed) return;
+    const criteriaWithProb = critList.filter(c => llmPairs.find(p => p.id === c.key)?.probCol !== undefined);
+    const criteriaWithoutProb = critList.filter(c => llmPairs.find(p => p.id === c.key)?.probCol === undefined);
     const exportObj = {
+      ...(modelName && { model: modelName }),
       thresholds,
       mapping,
       llmPairs,
@@ -468,6 +687,13 @@ export default function LlmEval() {
       correlations: parsed.correlations,
       filters: filtersByCriterion,
       includedCriteria: critList.map(c => c.label),
+      probabilityAvailability: {
+        withProbabilities: criteriaWithProb.map(c => c.label),
+        withoutProbabilities: criteriaWithoutProb.map(c => c.label),
+        note: criteriaWithoutProb.length > 0 
+          ? "Some criteria do not have probability columns. Probability thresholds were not applied to these criteria."
+          : "All criteria have probability columns available.",
+      },
       humanCounts: Object.fromEntries(
         critList.map(({ key, label }) => {
           const truths = parsed.truthByCriterion[key] || [];
@@ -487,7 +713,24 @@ export default function LlmEval() {
     if (!parsed) return;
     const date = new Date().toLocaleString();
     const includedCriteria = critList.map(c => c.label).join(", ");
-    const thresholdsHtml = Object.entries(thresholds).map(([k, t]) => `<tr><td>${k}</td><td>${t.yesMaybeMinProb.toFixed(2)}</td><td>${t.noMinProb.toFixed(2)}</td></tr>`).join("");
+    const criteriaWithProb = critList.filter(c => llmPairs.find(p => p.id === c.key)?.probCol !== undefined);
+    const criteriaWithoutProb = critList.filter(c => llmPairs.find(p => p.id === c.key)?.probCol === undefined);
+    const probNote = criteriaWithoutProb.length > 0 
+      ? `<div style="background: #fff3cd; padding: 12px; border-radius: 4px; margin: 12px 0; border-left: 4px solid #ffc107;">
+           <strong>Note:</strong> The following criteria do not have probability columns: ${criteriaWithoutProb.map(c => c.label).join(", ")}. 
+           Probability thresholds were not applied to these criteria.
+         </div>`
+      : "";
+    const thresholdsHtml = critList.map(c => {
+      const pair = llmPairs.find(p => p.id === c.key);
+      const hasProb = pair?.probCol !== undefined;
+      if (hasProb) {
+        const t = thresholds[c.key];
+        return `<tr><td>${c.label}</td><td>${t.yesMaybeMinProb.toFixed(2)}</td><td>${t.noMinProb.toFixed(2)}</td></tr>`;
+      } else {
+        return `<tr><td>${c.label}</td><td colspan="2" style="color: #666; font-style: italic;">No probabilities available</td></tr>`;
+      }
+    }).join("");
     const mappingHtml = llmPairs.filter(p => mapping[p.id]?.include).map(p => {
       const humanCol = mapping[p.id]?.humanColumn || '-';
       const hv = mapping[p.id]?.humanValueMap || {};
@@ -540,9 +783,11 @@ export default function LlmEval() {
   <body onload="doPrint()">
     <h1>${escapeHtml(reportName || 'LLM Evaluation Report')}</h1>
     <div class="meta">Generated ${date}</div>
+    ${modelName ? `<div style="margin: 12px 0; padding: 8px 12px; background: #f0f0f0; border-radius: 4px; font-size: 14px;"><strong>Model:</strong> ${escapeHtml(modelName)}</div>` : ''}
     <div class="section">
       <h2 style="font-size:16px; margin:0 0 8px;">Settings</h2>
       <div style="margin: 6px 0 12px;">Included criteria: ${escapeHtml(includedCriteria)}</div>
+      ${probNote}
       <h3 style="font-size:14px; margin:0 0 4px;">Thresholds</h3>
       <table><thead><tr><th>Criteria</th><th>Yes/Maybe min prob</th><th>No min prob</th></tr></thead><tbody>${thresholdsHtml}</tbody></table>
       <h3 style="font-size:14px; margin:16px 0 4px;">Mappings</h3>
@@ -681,7 +926,12 @@ export default function LlmEval() {
                   const humanMap = mapping[pair.id]?.humanValueMap || {};
                   const llmMap = mapping[pair.id]?.llmValueMap || {};
                   const t = thresholds[pair.id] || { yesMaybeMinProb: 0.5, noMinProb: 0.5 };
-                  const cols = ["Row", "Human column", "Human value", "Human decision", "LLM column", "LLM value", "LLM decision", "LLM prob", "Abstract"];
+                  const hasProb = pair.probCol !== undefined;
+                  const hasJustification = header.includes("Justification");
+                  const cols: string[] = ["Row", "Human column", "Human value", "Human decision", "LLM column", "LLM value", "LLM decision"];
+                  if (hasProb) cols.push("LLM prob");
+                  if (hasJustification) cols.push("Justification");
+                  cols.push("Abstract");
                   return (
                     <Table containerClassName="max-h-[70vh]">
                       <TableHeader className="sticky top-0 z-20">
@@ -695,11 +945,12 @@ export default function LlmEval() {
                           const humanVal = humanCol ? String(r[humanCol] ?? "") : "";
                           const humanDecision = humanMap[humanVal] || "-";
                           const llmVal = String(r[pair.labelCol] ?? "");
-                          const prob = parseNumber(r[pair.probCol]);
+                          const prob = hasProb && pair.probCol ? parseNumber(r[pair.probCol]) : undefined;
                           const mapped = llmMap[llmVal];
                           let base: boolean | null = mapped !== undefined ? (mapped === "include") : coerceLlmLabelToBoolean(llmVal);
-                          const finalVal = applyThresholds(base, prob, t, llmVal);
+                          const finalVal = hasProb ? applyThresholds(base, prob, t, llmVal) : base;
                           const llmDecision = finalVal === null ? "-" : finalVal ? "include" : "exclude";
+                          const justificationVal = hasJustification ? String(r["Justification"] ?? "") : "";
                           const abstractVal = String(r["Abstract"] ?? "");
                           return (
                             <TableRow key={idx}>
@@ -710,7 +961,8 @@ export default function LlmEval() {
                               <TableCell className="text-xs">{pair.labelCol}</TableCell>
                               <TableCell className="whitespace-pre-wrap break-words text-xs">{llmVal || '<empty>'}</TableCell>
                               <TableCell className="text-xs">{llmDecision}</TableCell>
-                              <TableCell className="text-xs">{prob === undefined ? '-' : prob.toFixed(3)}</TableCell>
+                              {hasProb && <TableCell className="text-xs">{prob === undefined ? '-' : prob.toFixed(3)}</TableCell>}
+                              {hasJustification && <TableCell className="whitespace-pre-wrap break-words text-xs min-w-[300px]">{justificationVal || '-'}</TableCell>}
                               <TableCell className="whitespace-pre-wrap break-words text-xs min-w-[420px]">{abstractVal}</TableCell>
                             </TableRow>
                           );
@@ -728,7 +980,7 @@ export default function LlmEval() {
         <CardHeader>
           <CardTitle>LLM Evaluation</CardTitle>
           <CardDescription>
-            Upload a CSV with human truth in `Rayyan exclusion reasons` and LLM outputs in Inclusion Criteria 1-4 columns.
+            Upload a CSV with human truth in separate columns for each evaluated label and LLM outputs with optional log probs.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -750,8 +1002,23 @@ export default function LlmEval() {
             <Button variant="outline" onClick={() => setIsMappingOpen(true)} disabled={!rows.length}>Remap</Button>
           </div>
           {header.length > 0 && (
-            <div className="text-sm text-muted-foreground">
-              Detected LLM pairs: {llmPairs.length}
+            <div className="space-y-1">
+              {modelName && (
+                <div className="text-sm">
+                  <span className="font-medium">Model:</span> <span className="text-muted-foreground">{modelName}</span>
+                </div>
+              )}
+              <div className="text-sm text-muted-foreground">
+                Configured LLM columns: {llmPairs.length}
+                {llmPairs.length > 0 && (() => {
+                  const withProb = llmPairs.filter(p => p.probCol).length;
+                  const withoutProb = llmPairs.filter(p => !p.probCol).length;
+                  if (withoutProb > 0) {
+                    return <span> ({withProb} with probabilities, {withoutProb} without)</span>;
+                  }
+                  return null;
+                })()}
+              </div>
             </div>
           )}
         </CardContent>
@@ -771,22 +1038,32 @@ export default function LlmEval() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {critList.map(({ key, label }) => (
-                  <div key={key} className="space-y-4">
-                    <div className="font-medium">{label}</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <Label>LLM yes/maybe min probability (below {'>'} treat as no): {thresholds[key].yesMaybeMinProb.toFixed(2)}</Label>
-                        <Slider value={[thresholds[key].yesMaybeMinProb]} min={0} max={1} step={0.01} onValueChange={(v) => updateThreshold(key, "yesMaybeMinProb", v)} />
-                      </div>
-                      <div>
-                        <Label>LLM no min probability (below {'>'} treat as yes): {thresholds[key].noMinProb.toFixed(2)}</Label>
-                        <Slider value={[thresholds[key].noMinProb]} min={0} max={1} step={0.01} onValueChange={(v) => updateThreshold(key, "noMinProb", v)} />
-                      </div>
+                {critList.map(({ key, label }) => {
+                  const pair = llmPairs.find(p => p.id === key);
+                  const hasProb = pair?.probCol !== undefined;
+                  return (
+                    <div key={key} className="space-y-4">
+                      <div className="font-medium">{label}</div>
+                      {hasProb ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                            <Label>LLM yes/maybe min probability (below {'>'} treat as no): {thresholds[key].yesMaybeMinProb.toFixed(2)}</Label>
+                            <Slider value={[thresholds[key].yesMaybeMinProb]} min={0} max={1} step={0.01} onValueChange={(v) => updateThreshold(key, "yesMaybeMinProb", v)} />
+                          </div>
+                          <div>
+                            <Label>LLM no min probability (below {'>'} treat as yes): {thresholds[key].noMinProb.toFixed(2)}</Label>
+                            <Slider value={[thresholds[key].noMinProb]} min={0} max={1} step={0.01} onValueChange={(v) => updateThreshold(key, "noMinProb", v)} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">
+                          No probabilities available for this criteria
+                        </div>
+                      )}
+                      <Separator />
                     </div>
-                    <Separator />
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           </AccordionContent>
@@ -803,8 +1080,105 @@ export default function LlmEval() {
               </SheetDescription>
             </SheetHeader>
             <div className="p-6 space-y-6 overflow-auto">
+              <Accordion type="single" collapsible>
+                <AccordionItem value="import" className="border rounded-lg px-4">
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="text-left">
+                      <div className="font-medium text-sm">Import Mapping (Optional)</div>
+                      <div className="text-xs text-muted-foreground font-normal">Load a previously saved configuration to save time</div>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs">Import from file</Label>
+                      <Input
+                        type="file"
+                        accept=".json"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            handleImportMappingFile(f);
+                            e.target.value = "";
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Separator className="flex-1" />
+                      <span className="text-xs text-muted-foreground">OR</span>
+                      <Separator className="flex-1" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Load from saved mappings ({savedMappings.length})</Label>
+                      <div className="flex gap-2">
+                        <Select value={selectedSavedMapping} onValueChange={setSelectedSavedMapping}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a saved mapping" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {savedMappings.sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()).map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.displayName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button onClick={handleApplySavedMapping} disabled={!selectedSavedMapping}>
+                          Apply
+                        </Button>
+                        {selectedSavedMapping && (
+                          <Button variant="destructive" size="icon" onClick={() => handleDeleteSavedMapping(selectedSavedMapping)}>
+                            <span className="sr-only">Delete</span>
+                            ×
+                          </Button>
+                        )}
+                      </div>
+                      {selectedSavedMapping && (() => {
+                        const selected = savedMappings.find(m => m.id === selectedSavedMapping);
+                        if (!selected) return null;
+                        return (
+                          <div className="text-xs text-muted-foreground space-y-1 mt-2 p-2 bg-muted rounded">
+                            <div><strong>File:</strong> {selected.filename}</div>
+                            <div><strong>Columns:</strong> {selected.includedColumnCount} ({selected.withProbabilitiesCount} with probabilities)</div>
+                            <div><strong>Last used:</strong> {new Date(selected.lastUsed).toLocaleString()}</div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Add LLM Column Manually</CardTitle>
+                  <CardDescription>
+                    Select any column to use as an LLM label column (useful for models without probability outputs)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Select column</Label>
+                      <Select value={manualColumnSelection} onValueChange={setManualColumnSelection}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableColumnsForManualSelection.map((col) => (
+                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button onClick={handleAddManualColumn} disabled={!manualColumnSelection}>
+                      Add Column
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+              <Separator />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {llmPairs.map((p) => (
+                {llmPairs.filter(p => mapping[p.id]?.include !== false).map((p) => (
                   <div key={p.id} className="space-y-3 border rounded-md p-4">
                     <div className="flex items-center justify-between">
                       <div className="font-medium truncate" title={p.display}>{p.display}</div>
@@ -819,7 +1193,11 @@ export default function LlmEval() {
                         <span>Include</span>
                       </label>
                     </div>
-                    <div className="text-xs text-muted-foreground break-all">{p.labelCol} / {p.probCol}</div>
+                    <div className="text-xs text-muted-foreground break-all">
+                      {p.labelCol}
+                      {p.probCol && ` / ${p.probCol}`}
+                      {!p.probCol && <span className="text-amber-600"> (no probabilities)</span>}
+                    </div>
                     <div className="space-y-3">
                       <div className="space-y-1">
                         <Label className="text-xs">Human column</Label>
@@ -969,7 +1347,10 @@ export default function LlmEval() {
                 <div className={`text-xs ${isMappingValid ? 'text-green-600' : 'text-red-600'}`}>
                   {isMappingValid ? 'Mapping valid' : 'Select a human column for each included label'}
                 </div>
-                <Button disabled={!isMappingValid} onClick={() => { savePersistedMapping(header, llmPairs, mapping, filtersByCriterion); setIsMappingOpen(false); setMappingConfirmed(true); }}>Confirm</Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleExportMapping}>Export Mapping</Button>
+                  <Button disabled={!isMappingValid} onClick={handleConfirmMapping}>Confirm</Button>
+                </div>
               </div>
             </SheetFooter>
           </SheetContent>
