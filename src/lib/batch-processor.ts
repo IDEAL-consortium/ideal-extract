@@ -73,7 +73,7 @@ export const processBatch = {
           updated: new Date(),
           batches: updatedBatches,
         });
-      } else {
+      } else if (job.batchId) {
         const batch = await getBatchStatus(job.batchId);
         // Validate progress doesn't exceed total
         const progress = batch.request_counts?.completed || 0;
