@@ -39,6 +39,8 @@ type RowFilter = {
   value?: string;
 };
 
+type ModerationDecisions = Record<string, Record<number, 'human' | 'llm'>>; // [criterionKey][rowIndex] = 'human' | 'llm'
+
 type Confusion = {
   tp: number;
   tn: number;
@@ -341,6 +343,7 @@ export default function LlmEval() {
   const [savedMappings, setSavedMappings] = useState<SavedMapping[]>([]);
   const [selectedSavedMapping, setSelectedSavedMapping] = useState<string>("");
   const [uploadedFilename, setUploadedFilename] = useState<string>("");
+  const [moderationDecisions, setModerationDecisions] = useState<ModerationDecisions>({});
 
   const humanColumnOptions = useMemo(() => {
     const llmCols = new Set<string>();
@@ -412,7 +415,6 @@ export default function LlmEval() {
         const humanRaw = humanCol ? String(row[humanCol] ?? "").trim() : "";
         const humanMapped = mapping[c]?.humanValueMap?.[humanRaw];
         const humanInclude = humanMapped ? humanMapped === "include" : false;
-        truthByCriterion[c].push(humanInclude);
         const labelCol = pair.labelCol;
         const probCol = pair.probCol;
         const rawLabel = String(row[labelCol] ?? "");
@@ -421,7 +423,25 @@ export default function LlmEval() {
         let base: boolean | null = llmMapped !== undefined ? (llmMapped === "include") : coerceLlmLabelToBoolean(rawLabel);
         // Only apply thresholds if probCol exists
         const finalVal = probCol ? applyThresholds(base, rawProb, thresholds[c] || { yesMaybeMinProb: 0.5, noMinProb: 0.5 }, rawLabel) : base;
-        predByCriterion[c].push(finalVal === null ? false : finalVal);
+        const llmInclude = finalVal === null ? false : finalVal;
+        
+        // Apply moderation decisions
+        const moderation = moderationDecisions[c]?.[rowIndex];
+        let truth = humanInclude;
+        let pred = llmInclude;
+        
+        if (moderation === 'human') {
+          // Agree with human: keep original truth, keep original pred
+          // This confirms the human was correct, classification stays as is (FP/FN if they disagree)
+          // No change needed
+        } else if (moderation === 'llm') {
+          // Agree with LLM: adjust human truth to match LLM
+          // This corrects the human annotation, making it TP or TN
+          truth = llmInclude;
+        }
+        
+        truthByCriterion[c].push(truth);
+        predByCriterion[c].push(pred);
       }
     }
 
@@ -487,7 +507,7 @@ export default function LlmEval() {
       : 0;
 
     return { truthByCriterion, predByCriterion, confusionByCriterion, correlations: corr, overallAccuracy, rowIndicesByCriterion };
-  }, [rows, header, llmPairs, mapping, thresholds, filtersByCriterion]);
+  }, [rows, header, llmPairs, mapping, thresholds, filtersByCriterion, moderationDecisions]);
 
   const isMappingValid = useMemo(() => {
     const included = llmPairs.filter(p => mapping[p.id]?.include);
@@ -878,6 +898,106 @@ export default function LlmEval() {
       .replace(/'/g, "&#039;");
   }
 
+  function handleExportModeratedCSV() {
+    if (!parsed) return;
+    
+    const totalModerations = Object.values(moderationDecisions).reduce((sum, decisions) => sum + Object.keys(decisions).length, 0);
+    if (totalModerations === 0) return;
+    
+    // Build CSV rows
+    const csvRows: string[][] = [];
+    
+    // Header row: all original columns + new columns for each criterion
+    const headerRow = [...header];
+    for (const { key, label } of critList) {
+      headerRow.push(`${label}_Original_Classification`);
+      headerRow.push(`${label}_Moderation`);
+      headerRow.push(`${label}_New_Classification`);
+    }
+    csvRows.push(headerRow);
+    
+    // Helper to get classification for a row
+    const getClassification = (rowIndex: number, criterionKey: string, moderated: boolean): string => {
+      const pair = llmPairs.find(p => p.id === criterionKey);
+      if (!pair) return '';
+      
+      const row = rows[rowIndex];
+      const humanCol = mapping[criterionKey]?.humanColumn;
+      const humanVal = humanCol ? String(row[humanCol] ?? "").trim() : "";
+      const humanMapped = mapping[criterionKey]?.humanValueMap?.[humanVal];
+      const humanInclude = humanMapped ? humanMapped === "include" : false;
+      
+      const llmVal = String(row[pair.labelCol] ?? "");
+      const probCol = pair.probCol;
+      const rawProb = probCol ? parseNumber(row[probCol]) : undefined;
+      const llmMap = mapping[criterionKey]?.llmValueMap || {};
+      const mapped = llmMap[llmVal];
+      let base: boolean | null = mapped !== undefined ? (mapped === "include") : coerceLlmLabelToBoolean(llmVal);
+      const t = thresholds[criterionKey] || { yesMaybeMinProb: 0.5, noMinProb: 0.5 };
+      const finalVal = probCol ? applyThresholds(base, rawProb, t, llmVal) : base;
+      const llmInclude = finalVal === null ? false : finalVal;
+      
+      let truth = humanInclude;
+      let pred = llmInclude;
+      
+      if (moderated) {
+        const moderation = moderationDecisions[criterionKey]?.[rowIndex];
+        if (moderation === 'llm') {
+          truth = llmInclude;
+        }
+      }
+      
+      if (truth && pred) return 'TP';
+      if (!truth && !pred) return 'TN';
+      if (!truth && pred) return 'FP';
+      return 'FN';
+    };
+    
+    // Data rows
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
+      const dataRow = header.map(col => {
+        const val = row[col];
+        const str = val === null || val === undefined ? '' : String(val);
+        // Escape quotes and wrap in quotes if contains comma, quote, or newline
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      });
+      
+      // Add classification columns for each criterion
+      for (const { key } of critList) {
+        const originalClassification = getClassification(rowIndex, key, false);
+        const moderation = moderationDecisions[key]?.[rowIndex] || '';
+        const moderationStr = moderation === 'human' ? 'Confirmed Human' : moderation === 'llm' ? 'Corrected to LLM' : '';
+        const newClassification = moderation ? getClassification(rowIndex, key, true) : originalClassification;
+        
+        dataRow.push(originalClassification);
+        dataRow.push(moderationStr);
+        dataRow.push(newClassification);
+      }
+      
+      csvRows.push(dataRow);
+    }
+    
+    // Convert to CSV string
+    const csvContent = csvRows.map(row => row.join(',')).join('\n');
+    
+    // Generate filename
+    const baseFilename = uploadedFilename.replace(/\.csv$/i, '') || 'data';
+    const filename = `${totalModerations}_moderated_${baseFilename}.csv`;
+    
+    // Download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function renderMetricCell(value: number | null) {
     if (value === null || Number.isNaN(value)) return "-";
     return value.toFixed(3);
@@ -912,16 +1032,35 @@ export default function LlmEval() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-[95vw] p-0">
           <DialogHeader className="p-4">
-            <DialogTitle>Rows: {detailMeta?.criterion} – {detailMeta?.bucket?.toUpperCase()}</DialogTitle>
-            <DialogDescription>Showing matching rows from the CSV.</DialogDescription>
+            <DialogTitle>
+              Rows: {detailMeta?.criterion} – {detailMeta?.bucket?.toUpperCase()}
+              {(() => {
+                if (!detailMeta) return null;
+                const pair = llmPairs.find(p => p.display === detailMeta.criterion);
+                if (!pair) return null;
+                const moderatedCount = moderationDecisions[pair.id] ? Object.keys(moderationDecisions[pair.id]).length : 0;
+                if (moderatedCount > 0) {
+                  return <span className="ml-2 text-sm font-normal text-blue-600">({moderatedCount} moderated)</span>;
+                }
+                return null;
+              })()}
+            </DialogTitle>
+            <DialogDescription>
+              "Agree with Human" confirms human annotation (keeps classification). 
+              "Agree with LLM" corrects human annotation to match LLM (changes to TP/TN).
+            </DialogDescription>
           </DialogHeader>
-          <div className="px-4 pb-4">
-            <div className="overflow-auto max-h-[70vh] border rounded-md">
+          <div className="px-4 pb-4 space-y-4">
+            <div className="overflow-auto max-h-[60vh] border rounded-md">
               <div className="overflow-x-auto">
                 {(() => {
-                  if (!detailMeta) return null;
+                  if (!detailMeta || !parsed) return null;
                   const pair = llmPairs.find(p => p.display === detailMeta.criterion);
                   if (!pair) return <div className="p-4 text-sm text-muted-foreground">Pair not found.</div>;
+                  
+                  // Use static indices from when modal opened
+                  const indices = detailMeta.indices || [];
+                  
                   const humanCol = mapping[pair.id]?.humanColumn;
                   const humanMap = mapping[pair.id]?.humanValueMap || {};
                   const llmMap = mapping[pair.id]?.llmValueMap || {};
@@ -932,39 +1071,164 @@ export default function LlmEval() {
                   if (hasProb) cols.push("LLM prob");
                   if (hasJustification) cols.push("Justification");
                   cols.push("Abstract");
+                  
+                  // Helper to compute current bucket for a row
+                  const getCurrentBucket = (idx: number): 'tp' | 'tn' | 'fp' | 'fn' => {
+                    const r = rows[idx];
+                    const humanVal = humanCol ? String(r[humanCol] ?? "").trim() : "";
+                    const humanMapped = mapping[pair.id]?.humanValueMap?.[humanVal];
+                    const humanInclude = humanMapped ? humanMapped === "include" : false;
+                    
+                    const llmVal = String(r[pair.labelCol] ?? "");
+                    const rawProb = hasProb && pair.probCol ? parseNumber(r[pair.probCol]) : undefined;
+                    const mapped = llmMap[llmVal];
+                    let base: boolean | null = mapped !== undefined ? (mapped === "include") : coerceLlmLabelToBoolean(llmVal);
+                    const finalVal = hasProb ? applyThresholds(base, rawProb, t, llmVal) : base;
+                    const llmInclude = finalVal === null ? false : finalVal;
+                    
+                    const moderation = moderationDecisions[pair.id]?.[idx];
+                    let truth = humanInclude;
+                    let pred = llmInclude;
+                    
+                    if (moderation === 'human') {
+                      // Agree with human: keep original, no change to classification
+                    } else if (moderation === 'llm') {
+                      // Agree with LLM: correct human truth to match LLM
+                      truth = llmInclude;
+                    }
+                    
+                    if (truth && pred) return 'tp';
+                    if (!truth && !pred) return 'tn';
+                    if (!truth && pred) return 'fp';
+                    return 'fn';
+                  };
+                  
                   return (
-                    <Table containerClassName="max-h-[70vh]">
+                    <Table containerClassName="max-h-[60vh]">
                       <TableHeader className="sticky top-0 z-20">
                         <TableRow className="bg-background">
                           {cols.map((c) => (<TableHead key={c} className="bg-background">{c}</TableHead>))}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(detailMeta.indices || []).map((idx) => {
+                        {indices.map((idx) => {
                           const r = rows[idx] as Row;
                           const humanVal = humanCol ? String(r[humanCol] ?? "") : "";
                           const humanDecision = humanMap[humanVal] || "-";
+                          const humanIncludeOriginal = humanDecision === "include";
                           const llmVal = String(r[pair.labelCol] ?? "");
                           const prob = hasProb && pair.probCol ? parseNumber(r[pair.probCol]) : undefined;
                           const mapped = llmMap[llmVal];
                           let base: boolean | null = mapped !== undefined ? (mapped === "include") : coerceLlmLabelToBoolean(llmVal);
                           const finalVal = hasProb ? applyThresholds(base, prob, t, llmVal) : base;
-                          const llmDecision = finalVal === null ? "-" : finalVal ? "include" : "exclude";
+                          const llmIncludeOriginal = finalVal === null ? false : finalVal;
+                          const llmDecision = llmIncludeOriginal ? "include" : "exclude";
                           const justificationVal = hasJustification ? String(r["Justification"] ?? "") : "";
                           const abstractVal = String(r["Abstract"] ?? "");
+                          const currentModeration = moderationDecisions[pair.id]?.[idx];
+                          const currentBucket = getCurrentBucket(idx);
+                          const originalBucket = detailMeta.bucket;
+                          
+                          // Build detailed status text
+                          let statusText = originalBucket.toUpperCase();
+                          if (currentModeration === 'human') {
+                            // Agreed with human: confirms human was correct, classification unchanged
+                            const humanDecision = humanIncludeOriginal ? 'include' : 'exclude';
+                            statusText += ` → Confirmed Human (${humanDecision})`;
+                          } else if (currentModeration === 'llm') {
+                            // Agreed with LLM: corrects human annotation, classification changes
+                            const llmDecision = llmIncludeOriginal ? 'include' : 'exclude';
+                            statusText += ` → Corrected to LLM (${llmDecision})`;
+                            if (currentBucket !== originalBucket) {
+                              statusText += ` → ${currentBucket.toUpperCase()}`;
+                            }
+                          }
+                          const statusChanged = currentBucket !== originalBucket;
+                          
                           return (
-                            <TableRow key={idx}>
-                              <TableCell className="text-xs">{idx + 1}</TableCell>
-                              <TableCell className="text-xs">{humanCol || '-'}</TableCell>
-                              <TableCell className="whitespace-pre-wrap break-words text-xs">{humanVal || '<empty>'}</TableCell>
-                              <TableCell className="text-xs">{humanDecision}</TableCell>
-                              <TableCell className="text-xs">{pair.labelCol}</TableCell>
-                              <TableCell className="whitespace-pre-wrap break-words text-xs">{llmVal || '<empty>'}</TableCell>
-                              <TableCell className="text-xs">{llmDecision}</TableCell>
-                              {hasProb && <TableCell className="text-xs">{prob === undefined ? '-' : prob.toFixed(3)}</TableCell>}
-                              {hasJustification && <TableCell className="whitespace-pre-wrap break-words text-xs min-w-[300px]">{justificationVal || '-'}</TableCell>}
-                              <TableCell className="whitespace-pre-wrap break-words text-xs min-w-[420px]">{abstractVal}</TableCell>
-                            </TableRow>
+                            <React.Fragment key={idx}>
+                              <TableRow className={statusChanged ? 'bg-blue-50 dark:bg-blue-950' : ''}>
+                                <TableCell className="text-xs">{idx + 1}</TableCell>
+                                <TableCell className="text-xs">{humanCol || '-'}</TableCell>
+                                <TableCell className="whitespace-pre-wrap break-words text-xs">{humanVal || '<empty>'}</TableCell>
+                                <TableCell className="text-xs">{humanDecision}</TableCell>
+                                <TableCell className="text-xs">{pair.labelCol}</TableCell>
+                                <TableCell className="whitespace-pre-wrap break-words text-xs">{llmVal || '<empty>'}</TableCell>
+                                <TableCell className="text-xs">{llmDecision}</TableCell>
+                                {hasProb && <TableCell className="text-xs">{prob === undefined ? '-' : prob.toFixed(3)}</TableCell>}
+                                {hasJustification && <TableCell className="whitespace-pre-wrap break-words text-xs min-w-[300px]">{justificationVal || '-'}</TableCell>}
+                                <TableCell className="whitespace-pre-wrap break-words text-xs min-w-[420px]">{abstractVal}</TableCell>
+                              </TableRow>
+                              <TableRow className={statusChanged ? 'bg-blue-50 dark:bg-blue-950 border-b-2' : 'border-b-2'}>
+                                <TableCell colSpan={cols.length} className="py-2">
+                                  <div className="flex gap-2 items-center">
+                                    <span className="text-xs text-muted-foreground mr-2">
+                                      Status: <span className={statusChanged ? 'font-semibold text-blue-600' : 'font-medium'}>{statusText}</span>
+                                    </span>
+                                    <Button 
+                                      size="sm" 
+                                      variant={currentModeration === 'human' ? 'default' : 'outline'}
+                                      onClick={() => {
+                                        setModerationDecisions(prev => {
+                                          const next = { ...prev };
+                                          // Deep copy the nested object to avoid mutation
+                                          next[pair.id] = { ...(prev[pair.id] || {}) };
+                                          if (next[pair.id][idx] === 'human') {
+                                            delete next[pair.id][idx];
+                                          } else {
+                                            next[pair.id][idx] = 'human';
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="text-xs h-7 px-3"
+                                    >
+                                      Agree with Human
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant={currentModeration === 'llm' ? 'default' : 'outline'}
+                                      onClick={() => {
+                                        setModerationDecisions(prev => {
+                                          const next = { ...prev };
+                                          // Deep copy the nested object to avoid mutation
+                                          next[pair.id] = { ...(prev[pair.id] || {}) };
+                                          if (next[pair.id][idx] === 'llm') {
+                                            delete next[pair.id][idx];
+                                          } else {
+                                            next[pair.id][idx] = 'llm';
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="text-xs h-7 px-3"
+                                    >
+                                      Agree with LLM
+                                    </Button>
+                                    {currentModeration && (
+                                      <Button 
+                                        size="sm" 
+                                        variant="ghost"
+                                        onClick={() => {
+                                          setModerationDecisions(prev => {
+                                            const next = { ...prev };
+                                            // Deep copy the nested object to avoid mutation
+                                            next[pair.id] = { ...(prev[pair.id] || {}) };
+                                            if (next[pair.id]?.[idx]) {
+                                              delete next[pair.id][idx];
+                                            }
+                                            return next;
+                                          });
+                                        }}
+                                        className="text-xs h-7 px-2"
+                                      >
+                                        Clear
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            </React.Fragment>
                           );
                         })}
                       </TableBody>
@@ -973,6 +1237,65 @@ export default function LlmEval() {
                 })()}
               </div>
             </div>
+            {detailMeta && parsed && (() => {
+              const pair = llmPairs.find(p => p.display === detailMeta.criterion);
+              if (!pair) return null;
+              const indices = detailMeta.indices || [];
+              
+              return (
+                <div className="border rounded-md p-4 bg-muted/30">
+                  <div className="text-sm font-medium mb-3">Bulk Actions</div>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      onClick={() => {
+                        setModerationDecisions(prev => {
+                          const next = { ...prev };
+                          // Deep copy the nested object to avoid mutation
+                          next[pair.id] = { ...(prev[pair.id] || {}) };
+                          for (const idx of indices) {
+                            next[pair.id][idx] = 'human';
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      Confirm Human on All (No Change)
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setModerationDecisions(prev => {
+                          const next = { ...prev };
+                          // Deep copy the nested object to avoid mutation
+                          next[pair.id] = { ...(prev[pair.id] || {}) };
+                          for (const idx of indices) {
+                            next[pair.id][idx] = 'llm';
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      Correct to LLM on All (→ TP/TN)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setModerationDecisions(prev => {
+                          const next = { ...prev };
+                          // Deep copy the nested object to avoid mutation
+                          next[pair.id] = { ...(prev[pair.id] || {}) };
+                          for (const idx of indices) {
+                            delete next[pair.id][idx];
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      Clear All Moderations
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -1394,7 +1717,16 @@ export default function LlmEval() {
           <Card>
             <CardHeader>
               <CardTitle>Per-criteria Metrics</CardTitle>
-              <CardDescription>TP, TN, FP, FN and derived metrics.</CardDescription>
+              <CardDescription>
+                TP, TN, FP, FN and derived metrics.
+                {(() => {
+                  const totalModerations = Object.values(moderationDecisions).reduce((sum, decisions) => sum + Object.keys(decisions).length, 0);
+                  if (totalModerations > 0) {
+                    return <span className="ml-2 text-sm font-medium text-blue-600">({totalModerations} moderated decision{totalModerations !== 1 ? 's' : ''})</span>;
+                  }
+                  return <span className="ml-2 text-sm text-muted-foreground italic">Click on TP/TN/FP/FN numbers to view and moderate rows</span>;
+                })()}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -1441,6 +1773,38 @@ export default function LlmEval() {
               </Table>
             </CardContent>
           </Card>
+
+          {(() => {
+            const totalModerations = Object.values(moderationDecisions).reduce((sum, decisions) => sum + Object.keys(decisions).length, 0);
+            if (totalModerations > 0) {
+              return (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Export Moderated Data</CardTitle>
+                    <CardDescription>
+                      Download a CSV file with all original data plus moderation decisions and corrected classifications.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="text-sm text-muted-foreground mb-2">
+                          <strong>{totalModerations}</strong> moderation decision{totalModerations !== 1 ? 's' : ''} applied
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          The CSV will include all {rows.length} rows with original classifications, moderation decisions, and new classifications for each criterion.
+                        </div>
+                      </div>
+                      <Button onClick={handleExportModeratedCSV}>
+                        Download Moderated CSV
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }
+            return null;
+          })()}
 
           <Card>
             <CardHeader>
