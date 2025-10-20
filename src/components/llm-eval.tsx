@@ -913,6 +913,8 @@ export default function LlmEval() {
       headerRow.push(`${label}_Original_Classification`);
       headerRow.push(`${label}_Moderation`);
       headerRow.push(`${label}_New_Classification`);
+      // New column: final moderated inclusion (1/0), empty if not moderated
+      headerRow.push(`${label}_final_include`);
     }
     csvRows.push(headerRow);
     
@@ -952,6 +954,34 @@ export default function LlmEval() {
       if (!truth && pred) return 'FP';
       return 'FN';
     };
+
+    // Helper to get final moderated inclusion truth for a row (true/false), or undefined if not moderated
+    const getFinalTruth = (rowIndex: number, criterionKey: string): boolean | undefined => {
+      const pair = llmPairs.find(p => p.id === criterionKey);
+      if (!pair) return undefined;
+
+      const row = rows[rowIndex];
+      const humanCol = mapping[criterionKey]?.humanColumn;
+      const humanVal = humanCol ? String(row[humanCol] ?? "").trim() : "";
+      const humanMapped = mapping[criterionKey]?.humanValueMap?.[humanVal];
+      const humanInclude = humanMapped ? humanMapped === "include" : false;
+
+      const llmVal = String(row[pair.labelCol] ?? "");
+      const probCol = pair.probCol;
+      const rawProb = probCol ? parseNumber(row[probCol]) : undefined;
+      const llmMap = mapping[criterionKey]?.llmValueMap || {};
+      const mapped = llmMap[llmVal];
+      let base: boolean | null = mapped !== undefined ? (mapped === "include") : coerceLlmLabelToBoolean(llmVal);
+      const t = thresholds[criterionKey] || { yesMaybeMinProb: 0.5, noMinProb: 0.5 };
+      const finalVal = probCol ? applyThresholds(base, rawProb, t, llmVal) : base;
+      const llmInclude = finalVal === null ? false : finalVal;
+
+      const moderation = moderationDecisions[criterionKey]?.[rowIndex];
+      if (!moderation) return undefined;
+      if (moderation === 'llm') return llmInclude;
+      // moderation === 'human' => keep original human truth
+      return humanInclude;
+    };
     
     // Data rows
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
@@ -976,6 +1006,9 @@ export default function LlmEval() {
         dataRow.push(originalClassification);
         dataRow.push(moderationStr);
         dataRow.push(newClassification);
+        // Append final include (1/0) if moderated, otherwise empty
+        const finalTruth = getFinalTruth(rowIndex, key);
+        dataRow.push(finalTruth === undefined ? '' : (finalTruth ? '1' : '0'));
       }
       
       csvRows.push(dataRow);
