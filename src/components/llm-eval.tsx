@@ -12,6 +12,9 @@ import { Checkbox } from "./ui/checkbox";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "./ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { toast } from "sonner";
+import { HelpText } from "./help-text";
+import { useNavigate } from "react-router-dom";
 
 type CriterionKey = string;
 
@@ -144,18 +147,7 @@ type PersistedMapping = {
   signature: { llmPairs: Array<{ labelCol: string; probCol?: string }>; header: string[] };
   mapping: Mapping;
   filters?: Record<string, RowFilter>;
-};
-
-type SavedMapping = {
-  id: string;
-  filename: string;
-  displayName: string;
-  includedColumnCount: number;
-  withProbabilitiesCount: number;
-  lastUsed: string;
-  mapping: Mapping;
-  filters: Record<string, RowFilter>;
-  llmPairs: Array<{ labelCol: string; probCol?: string }>;
+  moderationDecisions?: ModerationDecisions;
 };
 
 function pairsSignature(pairs: LlmPair[]): Array<{ labelCol: string; probCol?: string }> {
@@ -200,74 +192,15 @@ function loadPersistedMapping(header: string[], pairs: LlmPair[]): PersistedMapp
   }
 }
 
-function savePersistedMapping(header: string[], pairs: LlmPair[], mapping: Mapping, filters: Record<string, RowFilter>) {
+function savePersistedMapping(header: string[], pairs: LlmPair[], mapping: Mapping, filters: Record<string, RowFilter>, moderationDecisions?: ModerationDecisions) {
   const payload: PersistedMapping = {
     signature: { llmPairs: pairsSignature(pairs), header },
     mapping,
     filters,
+    moderationDecisions,
   };
   try {
     localStorage.setItem("llmEvalMapping", JSON.stringify(payload));
-  } catch {}
-}
-
-function getAllSavedMappings(): SavedMapping[] {
-  try {
-    const raw = localStorage.getItem("llmEvalSavedMappings");
-    if (!raw) return [];
-    return JSON.parse(raw) as SavedMapping[];
-  } catch {
-    return [];
-  }
-}
-
-function generateMappingId(mapping: Mapping, pairs: Array<{ labelCol: string; probCol?: string }>): string {
-  const sig = JSON.stringify({ mapping, pairs: pairsSignature(pairs.map(p => ({ id: p.labelCol, labelCol: p.labelCol, probCol: p.probCol, display: p.labelCol }))) });
-  return btoa(sig).slice(0, 32);
-}
-
-function saveToMappingLibrary(filename: string, mapping: Mapping, filters: Record<string, RowFilter>, pairs: LlmPair[]) {
-  const includedPairs = pairs.filter(p => mapping[p.id]?.include);
-  const withProbs = includedPairs.filter(p => p.probCol !== undefined).length;
-  const llmPairsSig = pairsSignature(includedPairs);
-  const id = generateMappingId(mapping, llmPairsSig);
-  
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('en-GB').replace(/\//g, '/');
-  const timeStr = now.toTimeString().slice(0, 5).replace(':', '');
-  const displayName = `${dateStr}_${timeStr}_${includedPairs.length}cols_${withProbs}withprobs`;
-  
-  const savedMappings = getAllSavedMappings();
-  const existingIndex = savedMappings.findIndex(m => m.id === id);
-  
-  const newMapping: SavedMapping = {
-    id,
-    filename,
-    displayName,
-    includedColumnCount: includedPairs.length,
-    withProbabilitiesCount: withProbs,
-    lastUsed: now.toISOString(),
-    mapping,
-    filters,
-    llmPairs: llmPairsSig,
-  };
-  
-  if (existingIndex >= 0) {
-    savedMappings[existingIndex] = newMapping;
-  } else {
-    savedMappings.push(newMapping);
-  }
-  
-  try {
-    localStorage.setItem("llmEvalSavedMappings", JSON.stringify(savedMappings));
-  } catch {}
-}
-
-function deleteSavedMapping(id: string) {
-  const savedMappings = getAllSavedMappings();
-  const filtered = savedMappings.filter(m => m.id !== id);
-  try {
-    localStorage.setItem("llmEvalSavedMappings", JSON.stringify(filtered));
   } catch {}
 }
 
@@ -326,6 +259,7 @@ function downloadJson(filename: string, data: unknown) {
 }
 
 export default function LlmEval() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<Row[]>([]);
   const [header, setHeader] = useState<string[]>([]);
   const [thresholds, setThresholds] = useState<CriteriaThresholds>(DEFAULT_THRESHOLDS);
@@ -340,10 +274,16 @@ export default function LlmEval() {
   const [reportName, setReportName] = useState<string>("LLM Eval Report");
   const [manualColumnSelection, setManualColumnSelection] = useState<string>("");
   const [modelName, setModelName] = useState<string>("");
-  const [savedMappings, setSavedMappings] = useState<SavedMapping[]>([]);
-  const [selectedSavedMapping, setSelectedSavedMapping] = useState<string>("");
   const [uploadedFilename, setUploadedFilename] = useState<string>("");
   const [moderationDecisions, setModerationDecisions] = useState<ModerationDecisions>({});
+
+  // Auto-save moderation decisions to localStorage whenever they change
+  useEffect(() => {
+    // Only save if we have data loaded and mapping is confirmed
+    if (rows.length > 0 && header.length > 0 && llmPairs.length > 0 && mappingConfirmed) {
+      savePersistedMapping(header, llmPairs, mapping, filtersByCriterion, moderationDecisions);
+    }
+  }, [moderationDecisions, header, llmPairs, mapping, filtersByCriterion, mappingConfirmed, rows.length]);
 
   const humanColumnOptions = useMemo(() => {
     const llmCols = new Set<string>();
@@ -523,10 +463,6 @@ export default function LlmEval() {
     });
   }, [llmPairs, mapping, rows]);
 
-  useEffect(() => {
-    setSavedMappings(getAllSavedMappings());
-  }, []);
-
   function extractModelFromFilename(filename: string): string {
     // Pattern: extracted_fields_{jobId}_{modelName}.csv
     const match = filename.match(/extracted_fields_\d+_(.+)\.csv$/i);
@@ -547,15 +483,49 @@ export default function LlmEval() {
       complete: (res) => {
         const data = res.data as Row[];
         const fields = res.meta.fields || [];
+        
+        if (!fields || fields.length === 0) {
+          toast.error("CSV file has no headers. Please ensure your CSV file is properly formatted.");
+          return;
+        }
+        
+        if (!data || data.length === 0) {
+          toast.error("CSV file is empty or contains no valid data rows.");
+          return;
+        }
+        
         setRows(data);
         setHeader(fields);
         const pairs = detectLlmPairs(fields);
+        
+        if (pairs.length === 0) {
+          toast.warning("No LLM output columns detected. LLM columns should have names ending with ' Probability' (e.g., 'Criterion 1 Probability').");
+        }
+        
         setLlmPairs(pairs);
         // initialize mapping draft
         const persisted = loadPersistedMapping(fields, pairs);
         if (persisted) {
           setMapping(persisted.mapping);
           setFiltersByCriterion(persisted.filters || {});
+          // Restore moderation decisions if available, filtering out invalid row indices
+          if (persisted.moderationDecisions) {
+            const cleanedDecisions: ModerationDecisions = {};
+            for (const [criterionKey, decisions] of Object.entries(persisted.moderationDecisions)) {
+              const validDecisions: Record<number, 'human' | 'llm'> = {};
+              for (const [rowIndexStr, decision] of Object.entries(decisions)) {
+                const rowIndex = parseInt(rowIndexStr, 10);
+                // Only keep decisions for rows that exist in the current data
+                if (!isNaN(rowIndex) && rowIndex >= 0 && rowIndex < data.length) {
+                  validDecisions[rowIndex] = decision;
+                }
+              }
+              if (Object.keys(validDecisions).length > 0) {
+                cleanedDecisions[criterionKey] = validDecisions;
+              }
+            }
+            setModerationDecisions(cleanedDecisions);
+          }
         } else {
           const m: Mapping = {};
           for (const p of pairs) {
@@ -563,6 +533,7 @@ export default function LlmEval() {
           }
           setMapping(m);
           setFiltersByCriterion({});
+          setModerationDecisions({});
         }
         // initialize thresholds for any new criteria
         setThresholds((prev) => {
@@ -579,6 +550,14 @@ export default function LlmEval() {
       },
       error: (err) => {
         console.error("CSV parse error", err);
+        const errorMessage = err?.message || "Unknown parsing error";
+        if (errorMessage.includes("quote")) {
+          toast.error(`CSV parsing error: Malformed quotes in CSV file. Please check that all quoted fields are properly closed.`);
+        } else if (errorMessage.includes("delimiter")) {
+          toast.error(`CSV parsing error: Invalid delimiter. Please ensure your file uses commas to separate values.`);
+        } else {
+          toast.error(`CSV parsing error: ${errorMessage}. Please ensure the file is a valid CSV.`);
+        }
       },
     });
   }
@@ -599,65 +578,101 @@ export default function LlmEval() {
       try {
         const data = JSON.parse(e.target?.result as string);
         applyImportedMapping(data);
+        toast.success("Mapping imported successfully");
       } catch (err) {
         console.error("Failed to parse mapping file:", err);
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        if (errorMessage.includes("JSON")) {
+          toast.error("Invalid mapping file: File is not valid JSON. Please check the file format.");
+        } else {
+          toast.error(`Failed to import mapping: ${errorMessage}`);
+        }
       }
+    };
+    reader.onerror = () => {
+      toast.error("Failed to read mapping file. Please ensure the file is accessible.");
     };
     reader.readAsText(file);
   }
 
   function applyImportedMapping(data: any) {
-    if (!data?.mapping || !data?.llmPairs) return;
+    if (!data?.mapping || !data?.llmPairs) {
+      toast.warning("Invalid mapping file: Missing required fields (mapping or llmPairs).");
+      return;
+    }
     
-    // Check compatibility: all llmPairs from import must exist in current data
+    const headerSet = new Set(header);
     const currentPairIds = new Set(llmPairs.map(p => p.id));
     const importedPairs = data.llmPairs as Array<{ labelCol: string; probCol?: string }>;
     const importedMapping = data.mapping as Mapping;
     
-    // Only apply mapping for pairs that exist
+    // Step 1: Check which imported pairs are compatible (exist in current CSV header)
     const compatibleMapping: Mapping = {};
+    const pairsToAdd: LlmPair[] = [];
+    const skippedKeys: string[] = [];
+    
     for (const [key, value] of Object.entries(importedMapping)) {
-      if (currentPairIds.has(key)) {
-        compatibleMapping[key] = value;
+      // Check if the labelCol exists in the current header
+      const importedPair = importedPairs.find(p => p.labelCol === key);
+      const labelColExists = importedPair && headerSet.has(importedPair.labelCol);
+      
+      if (labelColExists) {
+        // Ensure the compatible mapping has include: true
+        compatibleMapping[key] = { ...value, include: true };
+        
+        // If this pair doesn't exist in current llmPairs, add it
+        if (!currentPairIds.has(key)) {
+          pairsToAdd.push({
+            id: key,
+            labelCol: importedPair!.labelCol,
+            probCol: importedPair!.probCol && headerSet.has(importedPair!.probCol) ? importedPair!.probCol : undefined,
+            display: key,
+          });
+        }
+      } else {
+        skippedKeys.push(key);
       }
     }
     
     if (Object.keys(compatibleMapping).length === 0) {
-      console.warn("Imported mapping not compatible with current data");
+      toast.error("Imported mapping not compatible with current data: None of the mapped columns exist in the current file.");
       return;
     }
     
-    setMapping((prev) => ({ ...prev, ...compatibleMapping }));
+    // Step 2: Add new pairs to llmPairs if needed
+    if (pairsToAdd.length > 0) {
+      setLlmPairs((prev) => [...pairsToAdd, ...prev]);
+    }
+    
+    // Step 3: Create a new mapping that:
+    // - Sets include: false for all current pairs not in the imported mapping
+    // - Applies the compatible mapping (with include: true)
+    const newMapping: Mapping = {};
+    const allPairs = [...pairsToAdd, ...llmPairs];
+    
+    for (const pair of allPairs) {
+      if (compatibleMapping[pair.id]) {
+        newMapping[pair.id] = compatibleMapping[pair.id];
+      } else {
+        // Keep existing config but set include to false
+        newMapping[pair.id] = { ...mapping[pair.id], include: false };
+      }
+    }
+    
+    setMapping(newMapping);
     if (data.filters) {
       setFiltersByCriterion((prev) => ({ ...prev, ...data.filters }));
     }
-  }
-
-  function handleApplySavedMapping() {
-    if (!selectedSavedMapping) return;
-    const saved = savedMappings.find(m => m.id === selectedSavedMapping);
-    if (!saved) return;
     
-    applyImportedMapping({
-      mapping: saved.mapping,
-      filters: saved.filters,
-      llmPairs: saved.llmPairs,
-    });
-    setSelectedSavedMapping("");
-  }
-
-  function handleDeleteSavedMapping(id: string) {
-    deleteSavedMapping(id);
-    setSavedMappings(getAllSavedMappings());
-    if (selectedSavedMapping === id) {
-      setSelectedSavedMapping("");
+    if (skippedKeys.length > 0) {
+      toast.warning(`Partially applied mapping: ${skippedKeys.length} column(s) not found in current data (${skippedKeys.join(", ")})`);
     }
+    
+    toast.success(`Imported mapping applied successfully: ${Object.keys(compatibleMapping).length} column(s) configured.`);
   }
 
   function handleConfirmMapping() {
-    savePersistedMapping(header, llmPairs, mapping, filtersByCriterion);
-    saveToMappingLibrary(uploadedFilename || "unknown.csv", mapping, filtersByCriterion, llmPairs);
-    setSavedMappings(getAllSavedMappings());
+    savePersistedMapping(header, llmPairs, mapping, filtersByCriterion, moderationDecisions);
     setIsMappingOpen(false);
     setMappingConfirmed(true);
   }
@@ -847,10 +862,10 @@ export default function LlmEval() {
         <thead>
           <tr>
             <th>Criteria</th>
-            <th>TP</th>
-            <th>TN</th>
-            <th>FP (Inclusion Error)</th>
-            <th>FN (Exclusion Error)</th>
+            <th>True Positive (TP)</th>
+            <th>True Negative (TN)</th>
+            <th>False Positive (FP) - Inclusion Error</th>
+            <th>False Negative (FN) - Exclusion Error</th>
             <th>Accuracy</th>
             <th>Precision</th>
             <th>Recall</th>
@@ -1275,59 +1290,59 @@ export default function LlmEval() {
               if (!pair) return null;
               const indices = detailMeta.indices || [];
               
-              return (
-                <div className="border rounded-md p-4 bg-muted/30">
-                  <div className="text-sm font-medium mb-3">Bulk Actions</div>
-                  <div className="flex gap-2 flex-wrap">
-                    <Button
-                      onClick={() => {
-                        setModerationDecisions(prev => {
-                          const next = { ...prev };
-                          // Deep copy the nested object to avoid mutation
-                          next[pair.id] = { ...(prev[pair.id] || {}) };
-                          for (const idx of indices) {
-                            next[pair.id][idx] = 'human';
-                          }
-                          return next;
-                        });
-                      }}
-                    >
-                      Confirm Human on All (No Change)
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setModerationDecisions(prev => {
-                          const next = { ...prev };
-                          // Deep copy the nested object to avoid mutation
-                          next[pair.id] = { ...(prev[pair.id] || {}) };
-                          for (const idx of indices) {
-                            next[pair.id][idx] = 'llm';
-                          }
-                          return next;
-                        });
-                      }}
-                    >
-                      Correct to LLM on All (→ TP/TN)
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setModerationDecisions(prev => {
-                          const next = { ...prev };
-                          // Deep copy the nested object to avoid mutation
-                          next[pair.id] = { ...(prev[pair.id] || {}) };
-                          for (const idx of indices) {
-                            delete next[pair.id][idx];
-                          }
-                          return next;
-                        });
-                      }}
-                    >
-                      Clear All Moderations
-                    </Button>
-                  </div>
-                </div>
-              );
+              // return (
+              //   <div className="border rounded-md p-4 bg-muted/30">
+              //     <div className="text-sm font-medium mb-3">Bulk Actions</div>
+              //     <div className="flex gap-2 flex-wrap">
+              //       <Button
+              //         onClick={() => {
+              //           setModerationDecisions(prev => {
+              //             const next = { ...prev };
+              //             // Deep copy the nested object to avoid mutation
+              //             next[pair.id] = { ...(prev[pair.id] || {}) };
+              //             for (const idx of indices) {
+              //               next[pair.id][idx] = 'human';
+              //             }
+              //             return next;
+              //           });
+              //         }}
+              //       >
+              //         Confirm Human on All (No Change)
+              //       </Button>
+              //       <Button
+              //         onClick={() => {
+              //           setModerationDecisions(prev => {
+              //             const next = { ...prev };
+              //             // Deep copy the nested object to avoid mutation
+              //             next[pair.id] = { ...(prev[pair.id] || {}) };
+              //             for (const idx of indices) {
+              //               next[pair.id][idx] = 'llm';
+              //             }
+              //             return next;
+              //           });
+              //         }}
+              //       >
+              //         Correct to LLM on All (→ TP/TN)
+              //       </Button>
+              //       <Button
+              //         variant="outline"
+              //         onClick={() => {
+              //           setModerationDecisions(prev => {
+              //             const next = { ...prev };
+              //             // Deep copy the nested object to avoid mutation
+              //             next[pair.id] = { ...(prev[pair.id] || {}) };
+              //             for (const idx of indices) {
+              //               delete next[pair.id][idx];
+              //             }
+              //             return next;
+              //           });
+              //         }}
+              //       >
+              //         Clear All Moderations
+              //       </Button>
+              //     </div>
+              //   </div>
+              // );
             })()}
           </div>
         </DialogContent>
@@ -1338,8 +1353,26 @@ export default function LlmEval() {
           <CardDescription>
             Upload a CSV with human truth in separate columns for each evaluated label and LLM outputs with optional log probs.
           </CardDescription>
+          <HelpText 
+            text="Compare LLM extraction results against human labels. LLM columns ending with ' Probability' are automatically detected. You'll map human columns to LLM columns and configure value mappings."
+            linkTo="/#/manual#llm-eval"
+            linkText="Learn more about LLM evaluation"
+            className="mt-2"
+          />
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+            <h4 className="font-semibold text-sm">Getting Started</h4>
+            <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
+              <li>
+                Download your extraction results CSV from <a href="/#/job-management" onClick={(e) => { e.preventDefault(); navigate('/job-management'); }} className="text-blue-600 hover:underline cursor-pointer">Job Management</a> 
+                {" "}(file name should start with "extracted_fields")
+              </li>
+              <li>Upload the CSV file below</li>
+              <li>Map human columns to LLM columns and configure value mappings</li>
+              <li>Review metrics and moderate disagreements if needed</li>
+            </ol>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="space-y-2">
               <Label htmlFor="csv">CSV file</Label>
@@ -1392,6 +1425,12 @@ export default function LlmEval() {
                 <CardDescription>
                   Adjust per-criteria probability thresholds.
                 </CardDescription>
+                <HelpText 
+                  text="Probability thresholds filter low-confidence predictions. Adjust to balance precision and recall. Higher thresholds reduce false positives but may increase false negatives."
+                  linkTo="/#/manual#llm-eval"
+                  linkText="Learn more about thresholds"
+                  className="mt-2"
+                />
               </CardHeader>
               <CardContent className="space-y-6">
                 {critList.map(({ key, label }) => {
@@ -1433,9 +1472,29 @@ export default function LlmEval() {
               <SheetTitle>Map human columns to LLM labels</SheetTitle>
               <SheetDescription>
                 For each included label, pick one human column and map all its values, and map all LLM values.
+                <HelpText 
+                  text="This mapping step is crucial for accurate evaluation. You'll configure which human columns correspond to each LLM output, and map all values to include/exclude decisions."
+                  linkTo="/#/manual#llm-eval"
+                  linkText="Learn more about column mapping"
+                  className="mt-2"
+                />
               </SheetDescription>
             </SheetHeader>
             <div className="p-6 space-y-6 overflow-auto">
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-sm">Mapping Instructions</h4>
+                <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
+                  <li><strong>Include/Exclude:</strong> Toggle whether to evaluate this criterion</li>
+                  <li><strong>Select Human Column:</strong> Choose the column containing your ground truth labels</li>
+                  <li><strong>Map Human Values:</strong> Map each unique value (e.g., "Yes", "No", "IC1") to "include" or "exclude"</li>
+                  <li><strong>Map LLM Values:</strong> Map each unique LLM output (e.g., "yes", "no", "maybe") to "include" or "exclude"</li>
+                  <li><strong>Row Filters (Optional):</strong> Filter which rows to include in evaluation (e.g., only papers from 2020)</li>
+                </ol>
+                <p className="text-xs text-muted-foreground mt-2">
+                  <strong>Tip:</strong> All values must be mapped before you can confirm. Common mappings: "Yes"/"yes"/"maybe" → include, "No"/"no" → exclude. 
+                  <a href="/#/manual#llm-eval" onClick={(e) => { e.preventDefault(); navigate('/manual'); setTimeout(() => { const el = document.getElementById('llm-eval'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 300); }} className="text-blue-600 hover:underline cursor-pointer ml-1">See detailed mapping guide</a>
+                </p>
+              </div>
               <Accordion type="single" collapsible>
                 <AccordionItem value="import" className="border rounded-lg px-4">
                   <AccordionTrigger className="hover:no-underline">
@@ -1459,48 +1518,6 @@ export default function LlmEval() {
                         }}
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Separator className="flex-1" />
-                      <span className="text-xs text-muted-foreground">OR</span>
-                      <Separator className="flex-1" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Load from saved mappings ({savedMappings.length})</Label>
-                      <div className="flex gap-2">
-                        <Select value={selectedSavedMapping} onValueChange={setSelectedSavedMapping}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a saved mapping" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {savedMappings.sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()).map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.displayName}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button onClick={handleApplySavedMapping} disabled={!selectedSavedMapping}>
-                          Apply
-                        </Button>
-                        {selectedSavedMapping && (
-                          <Button variant="destructive" size="icon" onClick={() => handleDeleteSavedMapping(selectedSavedMapping)}>
-                            <span className="sr-only">Delete</span>
-                            ×
-                          </Button>
-                        )}
-                      </div>
-                      {selectedSavedMapping && (() => {
-                        const selected = savedMappings.find(m => m.id === selectedSavedMapping);
-                        if (!selected) return null;
-                        return (
-                          <div className="text-xs text-muted-foreground space-y-1 mt-2 p-2 bg-muted rounded">
-                            <div><strong>File:</strong> {selected.filename}</div>
-                            <div><strong>Columns:</strong> {selected.includedColumnCount} ({selected.withProbabilitiesCount} with probabilities)</div>
-                            <div><strong>Last used:</strong> {new Date(selected.lastUsed).toLocaleString()}</div>
-                          </div>
-                        );
-                      })()}
-                    </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -1509,6 +1526,12 @@ export default function LlmEval() {
                   <CardTitle className="text-base">Add LLM Column Manually</CardTitle>
                   <CardDescription>
                     Select any column to use as an LLM label column (useful for models without probability outputs)
+                    <HelpText 
+                      text="If your CSV doesn't have probability columns, you can manually add any column as an LLM output for evaluation."
+                      linkTo="/#/manual#llm-eval"
+                      linkText="Learn more about manual column selection"
+                      className="mt-1"
+                    />
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1556,7 +1579,15 @@ export default function LlmEval() {
                     </div>
                     <div className="space-y-3">
                       <div className="space-y-1">
-                        <Label className="text-xs">Human column</Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Human column</Label>
+                          <HelpText 
+                            text="Select the column containing human-annotated labels (e.g., 'IC1', 'Human Label', 'Inclusion Criteria 1')"
+                            linkTo="/#/manual#llm-eval"
+                            linkText="Learn more"
+                            className="text-xs"
+                          />
+                        </div>
                         <Select onValueChange={(v) => setMapping((prev) => ({
                           ...prev,
                           [p.id]: { ...prev[p.id], humanColumn: v, humanValueMap: {} }
@@ -1572,7 +1603,15 @@ export default function LlmEval() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Row filter (optional)</Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Row filter (optional)</Label>
+                          <HelpText 
+                            text="Filter rows before evaluation (e.g., only papers from 2020). Filters use AND logic."
+                            linkTo="/#/manual#llm-eval"
+                            linkText="Learn more"
+                            className="text-xs"
+                          />
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
                           <div>
                             <Label className="text-xs">Column</Label>
@@ -1625,7 +1664,15 @@ export default function LlmEval() {
                       </div>
                       {mapping[p.id]?.humanColumn && (
                         <div className="space-y-2">
-                          <Label className="text-xs">Map each human value to include/exclude</Label>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Map each human value to include/exclude</Label>
+                            <HelpText 
+                              text="Map all unique values found in the human column. Common: 'Yes'/'IC' → include, 'No'/'EC' → exclude"
+                              linkTo="/#/manual#llm-eval"
+                              linkText="Examples"
+                              className="text-xs"
+                            />
+                          </div>
                           <div className="max-h-56 overflow-auto border rounded-md">
                             <Table>
                               <TableHeader>
@@ -1660,7 +1707,15 @@ export default function LlmEval() {
                         </div>
                       )}
                       <div className="space-y-2">
-                        <Label className="text-xs">Map each LLM value to include/exclude</Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Map each LLM value to include/exclude</Label>
+                          <HelpText 
+                            text="Map all unique LLM outputs. Typically: 'yes'/'maybe' → include, 'no' → exclude"
+                            linkTo="/#/manual#llm-eval"
+                            linkText="Examples"
+                            className="text-xs"
+                          />
+                        </div>
                         <div className="max-h-56 overflow-auto border rounded-md">
                           <Table>
                             <TableHeader>
@@ -1766,10 +1821,10 @@ export default function LlmEval() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Criteria</TableHead>
-                    <TableHead>TP</TableHead>
-                    <TableHead>TN</TableHead>
-                    <TableHead>FP (Inclusion Error)</TableHead>
-                    <TableHead>FN (Exclusion Error)</TableHead>
+                    <TableHead>True Positive (TP)</TableHead>
+                    <TableHead>True Negative (TN)</TableHead>
+                    <TableHead>False Positive (FP) - Inclusion Error</TableHead>
+                    <TableHead>False Negative (FN) - Exclusion Error</TableHead>
                     <TableHead>Accuracy</TableHead>
                     <TableHead>Precision</TableHead>
                     <TableHead>Recall</TableHead>

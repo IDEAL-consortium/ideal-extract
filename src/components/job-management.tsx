@@ -11,8 +11,11 @@ import { Download, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cancelBatch } from "@/lib/openai-service";
 import { downloadCustomFields } from "@/hooks/use-custom-fields";
+import { HelpText } from "./help-text";
+import { useNavigate } from "react-router-dom";
 
 export default function JobManagement() {
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingStatus, setCheckingStatus] = useState<Set<number>>(new Set());
@@ -37,6 +40,8 @@ export default function JobManagement() {
       setLoading(false);
     } catch (error) {
       console.error("Error loading jobs:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast.error(`Failed to load jobs: ${errorMessage}`);
       setLoading(false);
     }
   };
@@ -52,10 +57,19 @@ export default function JobManagement() {
     try {
       await processBatch.checkStatus(jobId);
       await loadJobs();
-      toast("Job status updated.");
+      toast.success("Job status updated.");
     } catch (error) {
       console.error("Error checking job status:", error);
-      toast("Failed to check job status.");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      if (errorMessage.includes("Job or batch ID not found")) {
+        toast.error("Job or batch not found. The job may have been deleted.");
+      } else if (errorMessage.includes("API key")) {
+        toast.error("OpenAI API key not configured or invalid. Please check Settings.");
+      } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+        toast.error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+      } else {
+        toast.error(`Failed to check job status: ${errorMessage}`);
+      }
     } finally {
       setCheckingStatus(prev => {
         const newSet = new Set(prev);
@@ -69,15 +83,24 @@ export default function JobManagement() {
     try {
       const job = await getJob(jobId);
       if (!job) {
-        toast("Job not found");
+        toast.error("Job not found. It may have been deleted.");
         return;
       }
 
       await downloadCSV(jobId, onlyProcessed);
-      toast("Results downloaded successfully");
+      toast.success("Results downloaded successfully");
     } catch (error) {
       console.error("Error downloading results:", error);
-      toast("Failed to download results");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+        toast.error("Results not found. The batch may not have completed yet or results may have been deleted.");
+      } else if (errorMessage.includes("API key")) {
+        toast.error("OpenAI API key not configured or invalid. Please check Settings.");
+      } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+        toast.error("Network error: Unable to download results. Please check your internet connection.");
+      } else {
+        toast.error(`Failed to download results: ${errorMessage}`);
+      }
     }
   };
 
@@ -85,7 +108,7 @@ export default function JobManagement() {
     try {
       await deleteJob(job.id);
       setJobs(jobs.filter((j) => j.id !== job.id));
-      toast("Job deleted successfully");
+      toast.success("Job deleted successfully");
       if (job.status !== "completed") {
         if (job.batches && job.batches.length > 0) {
           for (const b of job.batches) {
@@ -97,20 +120,23 @@ export default function JobManagement() {
       }
     } catch (error) {
       console.error("Error deleting job:", error);
-      toast("Failed to delete job");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast.error(`Failed to delete job: ${errorMessage}`);
     }
   };
   const handleDownloadCustomFields = async (jobId: number) => {
     try {
       const job = await getJob(jobId);
       if (!job) {
-        toast("Job not found");
+        toast.error("Job not found. It may have been deleted.");
         return;
       }
       downloadCustomFields(job.fields.custom || []);
+      toast.success("Custom fields downloaded successfully");
     } catch (error) {
       console.error("Error downloading custom fields:", error);
-      toast("Failed to download custom fields");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast.error(`Failed to download custom fields: ${errorMessage}`);
     }
   };
 
@@ -126,20 +152,47 @@ export default function JobManagement() {
     try {
       const job = await getJob(jobId);
       if (!job) {
-        toast("Job not found");
+        toast.error("Job not found. It may have been deleted.");
         return;
       }
 
       await downloadCSV(jobId, onlyProcessed);
-      toast(`Results for ${model} downloaded successfully`);
+      toast.success(`Results for ${model} downloaded successfully`);
     } catch (error) {
       console.error("Error downloading results:", error);
-      toast("Failed to download results");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+        toast.error(`Results for ${model} not found. The batch may not have completed yet or results may have been deleted.`);
+      } else if (errorMessage.includes("API key")) {
+        toast.error("OpenAI API key not configured or invalid. Please check Settings.");
+      } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+        toast.error("Network error: Unable to download results. Please check your internet connection.");
+      } else {
+        toast.error(`Failed to download results for ${model}: ${errorMessage}`);
+      }
     }
   };
 
   return (
     <div className="space-y-4">
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold mb-2">Job Management</h1>
+        <HelpText 
+          text="Monitor extraction jobs, check status, and download results. Jobs automatically refresh every 5 seconds when active. Each model in a multi-model job has its own batch with separate progress."
+          linkTo="/#/manual#job-management"
+          linkText="Learn more about job management"
+        />
+      </div>
+      <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2 mb-4">
+        <h4 className="font-semibold text-sm">Getting Started</h4>
+        <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
+          <li>Create extraction jobs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Extract Fields</a></li>
+          <li>Jobs appear here automatically and refresh every 5 seconds</li>
+          <li>Monitor progress: Validating → In Progress → Finalizing → Completed</li>
+          <li>When completed, download results CSV (file name starts with "extracted_fields")</li>
+          <li>Use downloaded CSV in <a href="/#/llm-eval" onClick={(e) => { e.preventDefault(); navigate('/llm-eval'); }} className="text-blue-600 hover:underline cursor-pointer">LLM Eval</a> for evaluation</li>
+        </ol>
+      </div>
       {jobs.map((job) => {
         const batches = (job.batches && job.batches.length > 0) 
           ? job.batches 

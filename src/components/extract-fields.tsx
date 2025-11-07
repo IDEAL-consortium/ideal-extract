@@ -26,6 +26,7 @@ import { createSystemPrompt, listAvailableModels } from "@/lib/openai-service";
 import SystemPromptViewer from "./SystemPromptViewer";
 import { useNavigate } from 'react-router-dom';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { HelpText } from "./help-text";
 
 export default function ExtractFields() {
   const [mode, setMode] = useState<"fulltext" | "abstract">("abstract");
@@ -37,16 +38,26 @@ export default function ExtractFields() {
   const [pdfData, setPdfData] = useState<Array<PDFData>>([]);
   const [extractDesign, setExtractDesign] = useState(true);
   const [extractMethod, setExtractMethod] = useState(true);
+  const [extractJustification, setExtractJustification] = useState(true);
   const { customFields, addCustomField, removeCustomField, updateCustomField, downloadCustomFields, handleUploadCustomFields } = useCustomFields();
   const [processingPdfs, setProcessingPdfs] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [pdfMatches, setPdfMatches] = useState<PDFMatch[]>([]);
   const [isMatching, setIsMatching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [enableLogprobs, setEnableLogprobs] = useState(false);
   const [downloadJsonl, setDownloadJsonl] = useState(false);
   const [systemPromptOverride, setSystemPromptOverride] = useState<string | undefined>(undefined);
   const navigate = useNavigate();
+  // Sync justification checkbox with customFields
+  useEffect(() => {
+    const hasJustification = customFields.some(
+      field => field.name.toLowerCase() === "justification"
+    );
+    if (hasJustification && !extractJustification) {
+      setExtractJustification(true);
+    }
+  }, [customFields, extractJustification]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -58,6 +69,14 @@ export default function ExtractFields() {
         }
       } catch (e) {
         console.error("Failed to load models", e);
+        const errorMessage = e instanceof Error ? e.message : "Unknown error occurred";
+        if (errorMessage.includes("API key")) {
+          toast.error("OpenAI API key not configured. Please set it in Settings.");
+        } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+          toast.error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+        } else {
+          toast.error(`Failed to load available models: ${errorMessage}`);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -88,7 +107,8 @@ export default function ExtractFields() {
           }
         },
         error: (error: any) => {
-          toast.error("Error parsing CSV file");
+          const errorMessage = error?.message || "Unknown parsing error";
+          toast.error(`CSV parsing error: ${errorMessage}. Please ensure the file is a valid CSV.`);
           reject(error);
         }
       });
@@ -117,7 +137,8 @@ export default function ExtractFields() {
                   await performMatching((a) => setIsMatching(a));
                 } catch (error) {
                   console.error("Error during matching:", error);
-                  toast.error("Error matching PDF files to CSV entries");
+                  const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+                  toast.error(`Failed to match PDFs to CSV entries: ${errorMessage}`);
                 }
               }
             } else {
@@ -165,12 +186,20 @@ export default function ExtractFields() {
             await performMatching((a) => setIsMatching(a), pdfDataResults);
           } catch (error) {
             console.error("Error during matching:", error);
-            toast.error("Error matching PDF files to CSV entries");
+            const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+            toast.error(`Failed to match PDFs to CSV entries: ${errorMessage}`);
           }
         }
       } catch (error) {
         console.error("Error processing PDFs:", error);
-        toast.error("Error processing PDF files");
+        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+        if (errorMessage.includes("PDF.js")) {
+          toast.error("PDF processing error: One or more PDF files may be corrupted or password-protected. Please check your files.");
+        } else if (errorMessage.includes("memory") || errorMessage.includes("Memory")) {
+          toast.error("Out of memory: Too many PDFs to process at once. Please try with fewer files.");
+        } else {
+          toast.error(`Failed to process PDF files: ${errorMessage}`);
+        }
       } finally {
         setProcessingPdfs(false);
         setProcessingProgress({ current: 0, total: 0 });
@@ -249,12 +278,14 @@ export default function ExtractFields() {
         }
       } catch (error) {
         console.error("Error parsing CSV data:", error);
-        toast.error("Error parsing CSV data");
+        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+        toast.error(`CSV parsing error: ${errorMessage}. Please ensure your CSV file is valid.`);
       }
       isProcessing(false);
     } catch (error) {
       console.error("Error matching PDFs:", error);
-      toast.error("Error matching PDF files to CSV entries");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast.error(`Failed to match PDFs: ${errorMessage}`);
       isProcessing(false);
     }
   };
@@ -280,11 +311,51 @@ export default function ExtractFields() {
 
     setIsSubmitting(true);
     try {
+      // Prepare custom fields, including justification if enabled
+      const allCustomFields = [...customFields];
+      
+      // Add justification field if enabled and not already present
+      if (extractJustification) {
+        const justificationExists = allCustomFields.some(
+          field => field.name.toLowerCase() === "justification"
+        );
+        if (!justificationExists) {
+          allCustomFields.push({
+            name: "Justification",
+            instruction: "Provide a brief justification with quotes from the paper for your choices. Provide one sentence per extracted/decided field.",
+            type: "text",
+            recheck_yes: false,
+            recheck_no: false,
+            force_recheck: false,
+          });
+        } else {
+          // Update existing justification field with the correct instruction
+          const justificationIndex = allCustomFields.findIndex(
+            field => field.name.toLowerCase() === "justification"
+          );
+          if (justificationIndex >= 0) {
+            allCustomFields[justificationIndex] = {
+              ...allCustomFields[justificationIndex],
+              instruction: "Provide a brief justification with quotes from the paper for your choices. Provide one sentence per extracted/decided field.",
+              type: "text",
+            };
+          }
+        }
+      } else {
+        // Remove justification if disabled
+        const justificationIndex = allCustomFields.findIndex(
+          field => field.name.toLowerCase() === "justification"
+        );
+        if (justificationIndex >= 0) {
+          allCustomFields.splice(justificationIndex, 1);
+        }
+      }
+
       // Create fields configuration
       const fields = {
         design: extractDesign,
         method: extractMethod,
-        custom: customFields.map((field) => ({
+        custom: allCustomFields.map((field) => ({
           name: field.name,
           instruction: field.instruction,
           type: field.type || "boolean",
@@ -339,7 +410,6 @@ export default function ExtractFields() {
         created: new Date(),
         updated: new Date(),
         options:{
-          logprobs: enableLogprobs,
           model: selectedModels[0],
           models: selectedModels,
           downloadJsonl: downloadJsonl
@@ -362,11 +432,27 @@ export default function ExtractFields() {
           status: "failed",
         });
         console.error("Error creating or starting job:", error);
-        toast.error("Error creating or starting the extraction job");
+        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+        if (errorMessage.includes("API key")) {
+          toast.error("OpenAI API key not configured or invalid. Please check Settings.");
+        } else if (errorMessage.includes("No papers with full text")) {
+          toast.error("No papers have matching PDFs with full text. Please check your PDF files and matching results.");
+        } else if (errorMessage.includes("quota") || errorMessage.includes("rate limit")) {
+          toast.error("OpenAI API quota exceeded or rate limit reached. Please try again later or check your OpenAI account.");
+        } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+          toast.error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+        } else {
+          toast.error(`Failed to start extraction job: ${errorMessage}`);
+        }
       }
     } catch (error) {
       console.error("Error starting job:", error);
-      toast.error("Failed to start extraction job");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      if (errorMessage.includes("Failed to read CSV")) {
+        toast.error("CSV file could not be read. Please ensure the file is not corrupted.");
+      } else {
+        toast.error(`Failed to prepare extraction job: ${errorMessage}`);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -387,12 +473,32 @@ export default function ExtractFields() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2 mb-6">
+        <h4 className="font-semibold text-sm">Getting Started</h4>
+        <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
+          <li>
+            Configure your OpenAI API key in <a href="/#/settings" onClick={(e) => { e.preventDefault(); navigate('/settings'); }} className="text-blue-600 hover:underline cursor-pointer">Settings</a> (required for extraction)
+          </li>
+          <li>Upload your CSV file with papers (must include Title, Abstract, and DOI columns)</li>
+          <li>Select extraction mode: Abstract Only (faster) or Full Text (requires PDF upload)</li>
+          <li>Choose one or more LLM models to run extraction</li>
+          <li>Configure fields to extract (default fields or add custom fields)</li>
+          <li>Click "Start Extraction" to create a batch job</li>
+          <li>Monitor progress in <a href="/#/job-management" onClick={(e) => { e.preventDefault(); navigate('/job-management'); }} className="text-blue-600 hover:underline cursor-pointer">Job Management</a></li>
+        </ol>
+      </div>
       <div className="space-y-4">
         <div>
           <h3 className="text-lg font-medium">Extraction Mode</h3>
           <p className="text-sm text-muted-foreground">
             Choose how to extract information from papers
           </p>
+          <HelpText 
+            text="Abstract mode is faster and cheaper, while full text provides more detailed extraction. Full text requires matching PDF files."
+            linkTo="/#/manual#extract-fields"
+            linkText="Learn more about extraction modes"
+            className="mt-1"
+          />
         </div>
 
         <RadioGroup
@@ -415,6 +521,9 @@ export default function ExtractFields() {
             <Label htmlFor="fulltext">Full Text (Requires PDF download)</Label>
           </div>
         </RadioGroup>
+        <div className="text-sm text-red-600 font-medium mt-2">
+          ⚠️ Warning: Full text mode is experimental and not thoroughly tested. Use with caution.
+        </div>
       </div>
 
       <Separator />
@@ -422,6 +531,12 @@ export default function ExtractFields() {
         <div>
           <h3 className="text-lg font-medium">Model</h3>
           <p className="text-sm text-muted-foreground">Choose one or more OpenAI models</p>
+          <HelpText 
+            text="Selecting multiple models runs the same extraction across all models for comparison. Each model creates a separate batch job."
+            linkTo="/#/manual#extract-fields"
+            linkText="Learn more about model selection"
+            className="mt-1"
+          />
         </div>
         <div className="grid w-full gap-2">
           <Label className="text-xs">OpenAI Models</Label>
@@ -450,16 +565,17 @@ export default function ExtractFields() {
               })
             )}
           </div>
-          <p className="text-xs text-muted-foreground">You can run the same job across multiple models. Progress reflects all batches. Note: not all models support log probabilities; enable logprobs only if all selected models support it.</p>
+          <HelpText 
+            text="You can run the same job across multiple models. Progress reflects all batches."
+            className="mt-1"
+          />
+          <HelpText 
+            text="Log probabilities can be enabled in Settings. When enabled, they are automatically requested for GPT-4.1 models only."
+            linkTo="/#/manual#settings"
+            linkText="Learn more about log probabilities"
+            className="mt-1"
+          />
           <div className="flex flex-col gap-2 mt-2">
-            <div className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                id="logprobs"
-                checked={enableLogprobs}
-                onCheckedChange={(checked) => setEnableLogprobs(checked === true)}
-              />
-              <Label htmlFor="logprobs" className="text-sm">Enable Log Probabilities</Label>
-            </div>
             <div className="flex items-center gap-2 cursor-pointer">
               <Checkbox
                 id="downloadJsonl"
@@ -480,6 +596,16 @@ export default function ExtractFields() {
           <p className="text-sm text-muted-foreground">
             Upload a CSV file with the following required columns: Title, Abstract, Authors, Keywords, DOI
           </p>
+          <HelpText 
+            text="CSV must include Title, Abstract, and DOI columns (case-insensitive). PDF files are matched automatically using metadata."
+            linkTo="/#/manual#extract-fields"
+            linkText="Learn more about CSV requirements"
+            className="mt-1"
+          />
+          <HelpText 
+            text="Other columns in your CSV can be present and will be preserved in the output CSV as-is (optional columns)."
+            className="mt-1"
+          />
         </div>
 
         <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -522,9 +648,12 @@ export default function ExtractFields() {
                 {pdfFolder.length} PDF files selected and processed
               </p>
             )}
-            <p className="text-xs text-muted-foreground">
-              Select a folder containing PDF files. Files will be matched to CSV entries using metadata.
-            </p>
+            <HelpText 
+              text="Select a folder containing PDF files. Files will be matched to CSV entries using metadata extracted from PDFs."
+              linkTo="/#/manual#extract-fields"
+              linkText="Learn more about PDF matching"
+              className="mt-1"
+            />
           </div>
         )}
 
@@ -543,7 +672,8 @@ export default function ExtractFields() {
                       await performMatching((a) => setIsMatching(a));
                     } catch (error) {
                       console.error("Error during re-matching:", error);
-                      toast.error("Error re-matching PDF files to CSV entries");
+                      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+                      toast.error(`Failed to re-match PDFs: ${errorMessage}`);
                     }
                   }
                 }}
@@ -593,6 +723,12 @@ export default function ExtractFields() {
           <p className="text-sm text-muted-foreground">
             Select which fields to extract from papers
           </p>
+          <HelpText 
+            text="Default fields (Design, Method) are pre-configured. Custom fields allow you to define specific extraction criteria with detailed instructions."
+            linkTo="/#/manual#extract-fields"
+            linkText="Learn more about field configuration"
+            className="mt-1"
+          />
         </div>
 
         <div className="space-y-2">
@@ -615,11 +751,11 @@ export default function ExtractFields() {
           </div>
           <div className="flex items-center space-x-2 cursor-pointer">
             <Checkbox
-              id="logprobs"
-              checked={enableLogprobs}
-              onCheckedChange={(checked) => setEnableLogprobs(checked === true)}
+              id="justification"
+              checked={extractJustification}
+              onCheckedChange={(checked) => setExtractJustification(checked === true)}
             />
-            <Label htmlFor="logprobs">Enable Log Probabilities</Label>
+            <Label htmlFor="justification">Justification</Label>
           </div>
         </div>
 
@@ -632,7 +768,14 @@ export default function ExtractFields() {
               <SystemPromptViewer
                 extractDesign={extractDesign}
                 extractMethod={extractMethod}
-                customFields={customFields}
+                customFields={[
+                  ...(extractJustification ? [{
+                    name: "Justification",
+                    instruction: "Provide a brief justification with quotes from the paper for your choices. Provide one sentence per extracted/decided field.",
+                    type: "text" as const,
+                  }] : []),
+                  ...customFields
+                ]}
                 overridePrompt={systemPromptOverride}
                 onSave={(value) => setSystemPromptOverride(value)}
               />

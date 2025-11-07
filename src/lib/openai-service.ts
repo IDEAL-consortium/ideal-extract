@@ -53,32 +53,54 @@ export async function cancelBatch(batchId?: string): Promise<void> {
     await openai.batches.cancel(batchId);
   } catch (error) {
     console.error("Failed to cancel batch:", error);
-    throw new Error("Failed to cancel batch. Please try again.");
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+      throw new Error("Batch not found. It may have already been completed or deleted.");
+    } else if (errorMessage.includes("already") || errorMessage.includes("completed")) {
+      throw new Error("Batch has already been completed and cannot be cancelled.");
+    } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+      throw new Error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+    } else {
+      throw new Error(`Failed to cancel batch: ${errorMessage}`);
+    }
   }
 }
 const getAIOptions = (options?: AIOptions) => {
   const model = options?.model || "gpt-4.1";
   const isGpt5 = model.toLowerCase().startsWith("gpt-5");
+  const isGpt41 = model.toLowerCase().startsWith("gpt-4.1");
+  const enableLogprobs = localStorage.getItem('enable_logprobs') === 'true';
   
-  // GPT-5 models have stricter parameter requirements
+  // GPT-5 models have stricter parameter requirements and don't support logprobs
   if (isGpt5) {
     return {
       model,
-      // Only include logprobs for GPT-5 if explicitly requested
-      ...(options?.logprobs && { logprobs: true, top_logprobs: 4 })
+      // GPT-5 doesn't support logprobs - never include them
     };
   }
   
-  // GPT-4 models support full parameter set
+  // GPT-4.1 models - automatically enable logprobs if setting is enabled
+  if (isGpt41 && enableLogprobs) {
+    return {
+      model,
+      logprobs: true,
+      top_logprobs: 4,
+      temperature: 1,
+      max_completion_tokens: 300,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+    };
+  }
+  
+  // Other models or logprobs disabled - default behavior without logprobs
   return {
     model,
-    logprobs: options?.logprobs || false,
     temperature: 1,
     max_completion_tokens: 300,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0,
-    ...(options?.logprobs && { top_logprobs: 4 })
   };
 }
 export async function createBatch(
@@ -90,77 +112,123 @@ export async function createBatch(
   },
   options: AIOptions = {}
 ) {
-  const openai = getOpenAIClient();
-  const systemPrompt = options.systemPromptOverride?.trim()?.length ? options.systemPromptOverride! : createSystemPrompt(fields);
-  const aiOptions = getAIOptions(options);
-  const requests = papers.map((paper) => {
-    const userPrompt = createUserPrompt(paper);
-    return {
-      custom_id: `request-${paper.id}`,
-      method: "POST",
-      url: "/v1/chat/completions",
-      body: {
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          {
-            role: "user",
-            content: userPrompt,
-          },
-        ],
-        response_format: { type: "json_object" },
-        ...aiOptions
-      },
-    };
-  });
-  const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
-  const safeModel = (aiOptions.model || "model").replace(/[^a-z0-9._-]/gi, "_");
-  
-  // Download JSONL if requested
-  if (options.downloadJsonl) {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    downloadFile(`batch_${safeModel}_${timestamp}.jsonl`, jsonl, "application/jsonl");
-  }
-  
-  if (isDryRun) {
-    console.log("Dry run mode: Batch creation skipped.");
-    downloadFile(`batch_${safeModel}.jsonl`, jsonl, "application/jsonl");
-    return "dry-run-batch-id";
-  }
-  
-  const file = await openai.files.create({
-    file: new File([jsonl], `batch_${safeModel}.jsonl`, { type: "application/jsonl" }),
-    purpose: "batch",
-  });
+  try {
+    const openai = getOpenAIClient();
+    const systemPrompt = options.systemPromptOverride?.trim()?.length ? options.systemPromptOverride! : createSystemPrompt(fields);
+    const aiOptions = getAIOptions(options);
+    const requests = papers.map((paper) => {
+      const userPrompt = createUserPrompt(paper);
+      return {
+        custom_id: `request-${paper.id}`,
+        method: "POST",
+        url: "/v1/chat/completions",
+        body: {
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
+            {
+              role: "user",
+              content: userPrompt,
+            },
+          ],
+          response_format: { type: "json_object" },
+          ...aiOptions
+        },
+      };
+    });
+    const jsonl = requests.map((req) => JSON.stringify(req)).join("\n");
+    const safeModel = (aiOptions.model || "model").replace(/[^a-z0-9._-]/gi, "_");
+    
+    // Download JSONL if requested
+    if (options.downloadJsonl) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      downloadFile(`batch_${safeModel}_${timestamp}.jsonl`, jsonl, "application/jsonl");
+    }
+    
+    if (isDryRun) {
+      console.log("Dry run mode: Batch creation skipped.");
+      downloadFile(`batch_${safeModel}.jsonl`, jsonl, "application/jsonl");
+      return "dry-run-batch-id";
+    }
+    
+    const file = await openai.files.create({
+      file: new File([jsonl], `batch_${safeModel}.jsonl`, { type: "application/jsonl" }),
+      purpose: "batch",
+    });
 
-  const batch = await openai.batches.create({
-    input_file_id: file.id,
-    endpoint: "/v1/chat/completions",
-    completion_window: "24h",
-  });
+    const batch = await openai.batches.create({
+      input_file_id: file.id,
+      endpoint: "/v1/chat/completions",
+      completion_window: "24h",
+    });
 
-  return batch.id;
+    return batch.id;
+  } catch (error) {
+    console.error("Failed to create batch:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("API key")) {
+      throw new Error("OpenAI API key not configured or invalid. Please check Settings.");
+    } else if (errorMessage.includes("quota") || errorMessage.includes("rate limit") || errorMessage.includes("insufficient")) {
+      throw new Error("OpenAI API quota exceeded or rate limit reached. Please check your OpenAI account or try again later.");
+    } else if (errorMessage.includes("model") && errorMessage.includes("not found")) {
+      throw new Error(`Selected model is not available. Please choose a different model.`);
+    } else if (errorMessage.includes("network") || errorMessage.includes("fetch") || errorMessage.includes("ECONNREFUSED")) {
+      throw new Error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+    } else {
+      throw new Error(`Failed to create batch: ${errorMessage}`);
+    }
+  }
 }
 
 export async function getBatchStatus(batchId: string) {
-  const openai = getOpenAIClient();
-  const batch = await openai.batches.retrieve(batchId);
-  return batch;
+  try {
+    const openai = getOpenAIClient();
+    const batch = await openai.batches.retrieve(batchId);
+    return batch;
+  } catch (error) {
+    console.error("Failed to get batch status:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+      throw new Error("Batch not found. It may have been deleted.");
+    } else if (errorMessage.includes("API key")) {
+      throw new Error("OpenAI API key not configured or invalid. Please check Settings.");
+    } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+      throw new Error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+    } else {
+      throw new Error(`Failed to get batch status: ${errorMessage}`);
+    }
+  }
 }
 export async function getBatchResults(batchId: string) {
-  const openai = getOpenAIClient();
-  const batch = await openai.batches.retrieve(batchId);
-  if (batch.status === "completed" && batch.output_file_id) {
-    const file = await openai.files.content(batch.output_file_id);
-    const results = await file.text();
-    return results
-      .split("\n")
-      .filter(Boolean)
-      .map((line: string) => JSON.parse(line));
+  try {
+    const openai = getOpenAIClient();
+    const batch = await openai.batches.retrieve(batchId);
+    if (batch.status === "completed" && batch.output_file_id) {
+      const file = await openai.files.content(batch.output_file_id);
+      const results = await file.text();
+      return results
+        .split("\n")
+        .filter(Boolean)
+        .map((line: string) => JSON.parse(line));
+    }
+    return [];
+  } catch (error) {
+    console.error("Failed to get batch results:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+      throw new Error("Batch not found or results no longer available.");
+    } else if (errorMessage.includes("API key")) {
+      throw new Error("OpenAI API key not configured or invalid. Please check Settings.");
+    } else if (errorMessage.includes("JSON")) {
+      throw new Error("Failed to parse batch results. The results file may be corrupted.");
+    } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+      throw new Error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
+    } else {
+      throw new Error(`Failed to get batch results: ${errorMessage}`);
+    }
   }
-  return [];
 }
 
 function createUserPrompt(paper: Paper): string {
