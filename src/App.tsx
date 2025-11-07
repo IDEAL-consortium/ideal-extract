@@ -7,6 +7,7 @@ import LlmEval from "./components/llm-eval";
 import JobManagement from "./components/job-management";
 import SettingsPage from "./components/settings";
 import PdfDownload from "./components/pdf-download";
+import Manual from "./components/manual";
 import Markdown from "react-markdown"
 import "./index.css";
 import readme from "../README.md?raw";
@@ -21,6 +22,7 @@ createRoot(document.getElementById("root")!).render(
       <Route path="job-management" element={<MainProvider><JobManagement /></MainProvider>} />
       <Route path="download" element={<MainProvider><PdfDownload /></MainProvider>} />
       <Route path="settings" element={<MainProvider><SettingsPage /></MainProvider>} />
+      <Route path="manual" element={<MainProvider><Manual /></MainProvider>} />
     </Routes>
    </HashRouter>
   </StrictMode>

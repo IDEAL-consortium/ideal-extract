@@ -1,6 +1,6 @@
 "use client"
 
-import { FileText, Settings, Database, Download, Brain, ChevronRight } from "lucide-react"
+import { FileText, Settings, Database, Download, Brain, ChevronRight, Github } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -59,9 +59,22 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="p-2 text-xs text-muted-foreground">
-          <div className="font-medium">Academic Paper Processing</div>
-          <div>AI-powered field extraction tool</div>
+        <div className="p-2 space-y-2">
+          <div className="text-xs text-muted-foreground">
+            <div className="font-medium">Academic Paper Processing</div>
+            <div>AI-powered field extraction tool</div>
+          </div>
+          <div className="pt-2 border-t">
+            <a 
+              href="https://github.com/IDEAL-consortium/ideal-extract" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Github className="h-4 w-4" />
+              <span>View on GitHub</span>
+            </a>
+          </div>
         </div>
       </SidebarFooter>
 
