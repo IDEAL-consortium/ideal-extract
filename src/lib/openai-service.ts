@@ -205,7 +205,9 @@ export async function getBatchResults(batchId: string) {
   try {
     const openai = getOpenAIClient();
     const batch = await openai.batches.retrieve(batchId);
-    if (batch.status === "completed" && batch.output_file_id) {
+    // Allow downloading results if output_file_id exists, regardless of status
+    // This enables downloading from expired/canceled batches that have partial results
+    if (batch.output_file_id) {
       const file = await openai.files.content(batch.output_file_id);
       const results = await file.text();
       return results
