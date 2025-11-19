@@ -14,7 +14,7 @@ export interface Job {
   created: Date;
   updated: Date;
   batchId?: string;
-  batches?: Array<{ model: string; batchId: string; status?: string; completed?: number; total?: number }>;
+  batches?: Array<{ model: string; batchId: string; status?: string; completed?: number; total?: number; output_file_id?: string }>;
   pdfFiles?: FileList;
   options?: AIOptions;
 }

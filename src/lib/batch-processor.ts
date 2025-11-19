@@ -58,7 +58,13 @@ export const processBatch = {
           const batch = await getBatchStatus(b.batchId);
           const completed = batch.request_counts?.completed || 0;
           summedCompleted += completed;
-          updatedBatches.push({ ...b, status: batch.status, completed });
+          // Store output_file_id to indicate if results are available for download
+          updatedBatches.push({ 
+            ...b, 
+            status: batch.status, 
+            completed,
+            output_file_id: batch.output_file_id || undefined
+          });
           if (batch.status !== "completed") allCompleted = false;
           if (batch.status === "failed") anyFailed = true;
         }

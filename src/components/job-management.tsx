@@ -244,7 +244,7 @@ export default function JobManagement() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {["validating", "in_progress", "finalizing", "canceling"].includes(batch.status || job.status) && (
+                      {["validating", "in_progress", "finalizing", "canceling", "expired", "canceled", "failed"].includes(batch.status || job.status) && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -259,7 +259,7 @@ export default function JobManagement() {
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={(batch.status || job.status) !== "completed"}
+                        disabled={!((batch.status || job.status) === "completed" || batch.output_file_id)}
                         onClick={() => handleDownloadBatch(job.id, batch.batchId, batch.model, true)}
                       >
                         <Download className="h-4 w-4 mr-1" /> Processed
@@ -267,7 +267,7 @@ export default function JobManagement() {
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={(batch.status || job.status) !== "completed"}
+                        disabled={!((batch.status || job.status) === "completed" || batch.output_file_id)}
                         onClick={() => handleDownloadBatch(job.id, batch.batchId, batch.model, false)}
                       >
                         <Download className="h-4 w-4 mr-1" /> All
