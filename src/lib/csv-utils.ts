@@ -160,38 +160,68 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     // Start with the original row data
     const mergedRow = { ...originalRow };
     
-    // Add extracted fields
-    if (job.fields.design) {
-      mergedRow["Design"] = extracted.design || "";
-    }
-
-    if (job.fields.method) {
-      mergedRow["Method"] = stringify(extracted.method || "");
-    }
-
-    if (job.fields.design 
-      || job.fields.method
-    ){
-      mergedRow["Flags"] = stringify(extracted.flags || "");
-    }
+    // Map of known field keys to their display column names (for backward compatibility)
+    const knownFieldMap: Record<string, string> = {
+      "design": "Design",
+      "method": "Method",
+      "flags": "Flags",
+      "reason_for_flags": "Reasons"
+    };
+    
+    // Track which custom field keys we've seen to avoid duplicates
+    const customFieldKeys = new Set(
+      job.fields.custom.map(field => nameToKey(field.name))
+    );
+    
+    // Export all fields from the LLM JSON response
+    // This is more robust than selectively exporting fields - captures everything the LLM returns
+    Object.keys(extracted).forEach((key) => {
+      // Skip internal metadata fields that are handled specially
+      if (key === "perplexity_score" || key === "field_logprobs") {
+        return;
+      }
+      
+      // Determine column name
+      let columnName: string;
+      if (knownFieldMap[key]) {
+        // Use known display name for standard fields
+        columnName = knownFieldMap[key];
+      } else if (customFieldKeys.has(key)) {
+        // For custom fields, find the original field name (not the key)
+        const customField = job.fields.custom.find(f => nameToKey(f.name) === key);
+        columnName = customField?.name || key;
+      } else {
+        // For any unexpected fields, use the key and convert snake_case to Title Case
+        columnName = key
+          .split('_')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+      }
+      
+      mergedRow[columnName] = stringify(extracted[key] || "");
+    });
+    
+    // Add special computed fields
     if (showLogprobsFlag) {
-      mergedRow["Perplexity Score"] = extracted.perplexity_score
+      mergedRow["Perplexity Score"] = extracted.perplexity_score || "N/A";
+      
+      // Handle field_logprobs for custom boolean fields
+      if (extracted.field_logprobs) {
+        job.fields.custom.forEach((field) => {
+          const fieldKey = nameToKey(field.name);
+          const isBooleanField = (field.type || 'boolean') === 'boolean';
+          if (isBooleanField && extracted.field_logprobs[fieldKey] !== undefined) {
+            mergedRow[`${field.name} Probability`] = extracted.field_logprobs[fieldKey];
+          }
+        });
+      }
     }
-    mergedRow["Reasons"] = extracted.reason_for_flags || ""
+    
     // Include the system prompt used
     mergedRow["System Prompt"] = job.options?.systemPromptOverride || createSystemPrompt({
       design: job.fields.design,
       method: job.fields.method,
       custom: job.fields.custom.map((f: CustomField) => ({ name: f.name, instruction: f.instruction, type: f.type }))
-    });
-    // Add custom fields
-    job.fields.custom.forEach((field) => {
-      const fieldKey = nameToKey(field.name);
-      mergedRow[field.name] = stringify(extracted[fieldKey] || "");
-      const isBooleanField = (field.type || 'boolean') === 'boolean';
-      if (showLogprobsFlag && isBooleanField) {
-        mergedRow[`${field.name} Probability`] = extracted.field_logprobs?.[fieldKey] || "";
-      }
     });
 
       return mergedRow;
