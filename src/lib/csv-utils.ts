@@ -310,9 +310,10 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     }
     
     if (!extracted) {
-      if (index < 5) {
-        console.log("⚠️ [CSV Export] No extraction result found for paper", { paperId, index });
-      }
+      console.log("⚠️ [CSV Export] No extraction result for paper", { paperId });
+      // if (index < 5) {
+      //   console.log("⚠️ [CSV Export] No extraction result found for paper", { paperId, index });
+      // }
       return originalRow; // Return original row if no extraction result
     }
     
