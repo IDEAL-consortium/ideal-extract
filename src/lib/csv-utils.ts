@@ -1,12 +1,19 @@
+import { CustomField } from "@/types";
 import { ChatCompletion } from "openai/resources/index.mjs";
 import Papa from "papaparse";
 import { getFilesByJobId } from "./files-manager";
 import { getJob } from "./job-manager";
-import { getBatchResults, nameToKey, createSystemPrompt } from "./openai-service";
-import { downloadFile } from "./utils";
 import { firstValueTokenLogprobByKey } from "./logprob";
-import { CustomField } from "@/types";
+import { createSystemPrompt, getBatchResults, nameToKey } from "./openai-service";
+import { downloadFile } from "./utils";
 
+
+function makeString(data: any): string {
+  if (typeof data === "string") {
+    return data;
+  }
+  return String(data);
+}
 // Helper function to compute logprobs and perplexity
 function computeLogprobsAnalysis(choice: ChatCompletion.Choice) {
   if (!choice.logprobs?.content) {
@@ -158,13 +165,17 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     }
 
     // Create a map of extraction results by paper ID
-    const extractionMap = new Map<number, any>();
+    const extractionMap = new Map<string, any>();
     console.log("🗺️ [CSV Export] Creating extraction map from batch results...");
     
     for (const result of results) {
       // Extract paper ID from custom_id (format: "request-{paperId}")
       const customId = result.custom_id as string;
-      const paperId = Number(customId.split("-").pop());
+      const paperId = customId.split("-").pop();
+      if (!paperId) {
+        console.error("❌ [CSV Export] Invalid custom_id format, cannot extract paperId", { customId });
+        continue;
+      }
       console.log("📝 [CSV Export] Processing result", { customId, paperId });
       
       // Extract the response content
@@ -259,15 +270,24 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     console.log("✅ [CSV Export] Extraction map complete", {
       batchId,
       mapSize: extractionMap.size,
-      paperIds: Array.from(extractionMap.keys()).sort((a, b) => a - b)
+      paperIds: Array.from(extractionMap.keys())
     });
 
   // Merge original CSV data with extraction results
   console.log("🔄 [CSV Export] Merging original CSV data with extraction results...");
   const originalDataWithIds = originalCsvData.map((row, index) => {
     // Use the row index as paper ID (assuming papers were processed in order)
-    const paperId = index + 1 ; // Assuming paper IDs start from 1
-    return { ...row, id: paperId };
+    const rowKeys = Object.keys(row);
+    const idColumns = rowKeys.filter(key => key.toLowerCase().includes("id"));
+    if (idColumns.length > 0) {
+      // this is for the case where CSV has an ID column
+      return { ...row, id: makeString(row[idColumns[0]])  };
+    }
+    else {
+      // this is for the case where CSV has no ID column
+      const paperId = index + 1 ; // Assuming paper IDs start from 1
+      return { ...row, id: makeString(paperId) };
+    }
   });
   console.log("📋 [CSV Export] Original data with IDs", {
     totalRows: originalDataWithIds.length,
@@ -276,14 +296,9 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
   });
   
   let dataToMerge = originalDataWithIds;
-
   if (onlyProcessed) {
     // Filter original data to only include processed papers
     const processedPaperIndexes = Array.from(extractionMap.keys());
-    console.log("🔍 [CSV Export] Filtering to processed papers only", {
-      processedPaperIndexes: processedPaperIndexes.sort((a, b) => a - b),
-      totalOriginal: originalDataWithIds.length
-    });
     dataToMerge = originalDataWithIds.filter((row) => processedPaperIndexes.includes(row.id));
     console.log("✅ [CSV Export] Filtered data", {
       filteredCount: dataToMerge.length,
@@ -297,7 +312,7 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
   console.log("🔀 [CSV Export] Starting data merge process...");
   const mergedData = dataToMerge.map((originalRow, index) => {
     // Use the row index as paper ID (assuming papers were processed in order)
-    const paperId = index+1;
+    const paperId = originalRow.id;
     const extracted = extractionMap.get(paperId);
     
     if (index === 0) {
