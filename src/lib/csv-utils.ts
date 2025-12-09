@@ -278,7 +278,7 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
   const originalDataWithIds = originalCsvData.map((row, index) => {
     // Use the row index as paper ID (assuming papers were processed in order)
     const rowKeys = Object.keys(row);
-    const idColumns = rowKeys.filter(key => key.toLowerCase().includes("id"));
+    const idColumns = rowKeys.filter(key => key.toLowerCase() === "id");
     if (idColumns.length > 0) {
       // this is for the case where CSV has an ID column
       return { ...row, id: makeString(row[idColumns[0]])  };
