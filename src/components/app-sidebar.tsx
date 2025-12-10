@@ -30,7 +30,7 @@ export function AppSidebar() {
           </div>
           <div className="grid flex-1 text-left text-sm leading-tight">
             <span className="truncate font-semibold">IDEAL Tools</span>
-            <span className="truncate text-xs text-muted-foreground">Field Extraction</span>
+            <span className="truncate text-xs text-muted-foreground">Paper Screening</span>
           </div>
         </div>
       </SidebarHeader>
@@ -62,7 +62,7 @@ export function AppSidebar() {
         <div className="p-2 space-y-2">
           <div className="text-xs text-muted-foreground">
             <div className="font-medium">Academic Paper Processing</div>
-            <div>AI-powered field extraction tool</div>
+            <div>AI-powered literature screening tool</div>
           </div>
           <div className="pt-2 border-t">
             <a 

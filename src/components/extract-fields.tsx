@@ -442,7 +442,7 @@ export default function ExtractFields() {
         } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
           toast.error("Network error: Unable to connect to OpenAI. Please check your internet connection.");
         } else {
-          toast.error(`Failed to start extraction job: ${errorMessage}`);
+          toast.error(`Failed to start screening job: ${errorMessage}`);
         }
       }
     } catch (error) {
@@ -451,7 +451,7 @@ export default function ExtractFields() {
       if (errorMessage.includes("Failed to read CSV")) {
         toast.error("CSV file could not be read. Please ensure the file is not corrupted.");
       } else {
-        toast.error(`Failed to prepare extraction job: ${errorMessage}`);
+        toast.error(`Failed to prepare screening job: ${errorMessage}`);
       }
     } finally {
       setIsSubmitting(false);
@@ -477,26 +477,26 @@ export default function ExtractFields() {
         <h4 className="font-semibold text-sm">Getting Started</h4>
         <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
           <li>
-            Configure your OpenAI API key in <a href="/#/settings" onClick={(e) => { e.preventDefault(); navigate('/settings'); }} className="text-blue-600 hover:underline cursor-pointer">Settings</a> (required for extraction)
+            Configure your OpenAI API key in <a href="/#/settings" onClick={(e) => { e.preventDefault(); navigate('/settings'); }} className="text-blue-600 hover:underline cursor-pointer">Settings</a> (required for screening)
           </li>
           <li>Upload your CSV file with papers (must include Title, Abstract, and DOI columns)</li>
-          <li>Select extraction mode: Abstract Only (faster) or Full Text (requires PDF upload)</li>
-          <li>Choose one or more LLM models to run extraction</li>
-          <li>Configure fields to extract (default fields or add custom fields)</li>
-          <li>Click "Start Extraction" to create a batch job</li>
+          <li>Select screening mode: Abstract Only (faster) or Full Text (requires PDF upload)</li>
+          <li>Choose one or more LLM models to run screening</li>
+          <li>Configure fields to screen (default fields or add custom fields)</li>
+          <li>Click "Start Screening" to create a batch job</li>
           <li>Monitor progress in <a href="/#/job-management" onClick={(e) => { e.preventDefault(); navigate('/job-management'); }} className="text-blue-600 hover:underline cursor-pointer">Job Management</a></li>
         </ol>
       </div>
       <div className="space-y-4">
         <div>
-          <h3 className="text-lg font-medium">Extraction Mode</h3>
+          <h3 className="text-lg font-medium">Screening Mode</h3>
           <p className="text-sm text-muted-foreground">
-            Choose how to extract information from papers
+            Choose how to screen articles based on criteria
           </p>
           <HelpText 
-            text="Abstract mode is faster and cheaper, while full text provides more detailed extraction. Full text requires matching PDF files."
+            text="Abstract mode is faster and cheaper, while full text provides more detailed screening. Full text requires matching PDF files."
             linkTo="/#/manual#extract-fields"
-            linkText="Learn more about extraction modes"
+            linkText="Learn more about screening modes"
             className="mt-1"
           />
         </div>
@@ -532,7 +532,7 @@ export default function ExtractFields() {
           <h3 className="text-lg font-medium">Model</h3>
           <p className="text-sm text-muted-foreground">Choose one or more OpenAI models</p>
           <HelpText 
-            text="Selecting multiple models runs the same extraction across all models for comparison. Each model creates a separate batch job."
+            text="Selecting multiple models runs the same screening across all models for comparison. Each model creates a separate batch job."
             linkTo="/#/manual#extract-fields"
             linkText="Learn more about model selection"
             className="mt-1"
@@ -719,12 +719,12 @@ export default function ExtractFields() {
 
       <div className="space-y-4">
         <div>
-          <h3 className="text-lg font-medium">Fields to Extract</h3>
+          <h3 className="text-lg font-medium">Fields to Screen</h3>
           <p className="text-sm text-muted-foreground">
-            Select which fields to extract from papers
+            Select which fields to screen articles based on
           </p>
           <HelpText 
-            text="Default fields (Design, Method) are pre-configured. Custom fields allow you to define specific extraction criteria with detailed instructions."
+            text="Default fields (Design, Method) are pre-configured. Custom fields allow you to define specific screening criteria with detailed instructions."
             linkTo="/#/manual#extract-fields"
             linkText="Learn more about field configuration"
             className="mt-1"
@@ -771,7 +771,7 @@ export default function ExtractFields() {
                 customFields={[
                   ...(extractJustification ? [{
                     name: "Justification",
-                    instruction: "Provide a brief justification with quotes from the paper for your choices. Provide one sentence per extracted/decided field.",
+                    instruction: "Provide a brief justification with quotes from the paper for your choices. Provide one sentence per screened/decided field.",
                     type: "text" as const,
                   }] : []),
                   ...customFields
@@ -943,10 +943,10 @@ export default function ExtractFields() {
         {isSubmitting ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Starting Extraction...
+            Starting Screening...
           </>
         ) : (
-          "Start Extraction"
+          "Start Screening"
         )}
       </Button>
     </form>

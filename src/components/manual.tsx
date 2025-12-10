@@ -30,7 +30,7 @@ export default function Manual() {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>IDEAL Extract User Manual</title>
+  <title>IDEAL Screen User Manual</title>
   <style>
     @page {
       size: A4;
@@ -40,7 +40,7 @@ export default function Manual() {
     @media print {
       @page {
         @top-center {
-          content: "IDEAL Extract User Manual";
+          content: "IDEAL Screen User Manual";
           font-size: 9pt;
           color: #666;
           margin-top: 1cm;
@@ -249,38 +249,39 @@ export default function Manual() {
 </head>
 <body onload="doPrint()">
   <div class="toc-page">
-    <h1>IDEAL Extract User Manual</h1>
+    <h1>IDEAL Screen User Manual</h1>
     <div class="meta">Generated ${date}</div>
     
     <div class="toc">
       <h2>Table of Contents</h2>
       <div class="toc-item"><a href="#overview">Overview</a></div>
-      <div class="toc-item"><a href="#extract-fields">Extract Fields</a></div>
+      <div class="toc-item"><a href="#extract-fields">Screen Fields</a></div>
       <div class="toc-item"><a href="#pdf-download">PDF Download</a></div>
       <div class="toc-item"><a href="#settings">Settings</a></div>
       <div class="toc-item"><a href="#job-management">Job Management</a></div>
       <div class="toc-item"><a href="#llm-eval">LLM Evaluation</a></div>
       <div class="toc-item"><a href="#technical-details">Technical Details</a></div>
+      <div class="toc-item"><a href="#about">About</a></div>
     </div>
   </div>
 
   <div id="overview" class="section page-break">
     <h2>Overview</h2>
-    <h3>Understanding IDEAL Extract</h3>
+    <h3>Understanding IDEAL Screen</h3>
     
-    <h4>What is IDEAL Extract?</h4>
+    <h4>What is IDEAL Screen?</h4>
     <p>
-      IDEAL Extract is an AI-powered tool designed to extract structured information from academic papers 
-      using Large Language Models (LLMs). It automates the process of screening papers and extracting 
+      IDEAL Screen is an AI-powered tool designed to screen articles based on criteria from academic papers 
+      using Large Language Models (LLMs). It automates the process of screening papers and evaluating 
       specific fields like study design, methodology, and custom criteria.
     </p>
     
     <h4>Key Features</h4>
     <ul>
       <li><strong>Batch Processing:</strong> Process hundreds or thousands of papers using OpenAI's Batch API</li>
-      <li><strong>Multi-Model Support:</strong> Run the same extraction across multiple LLM models for comparison</li>
-      <li><strong>Full-Text Extraction:</strong> Extract from PDF files or work with abstracts only</li>
-      <li><strong>Custom Fields:</strong> Define your own extraction criteria with detailed instructions</li>
+      <li><strong>Multi-Model Support:</strong> Run the same screening across multiple LLM models for comparison</li>
+      <li><strong>Full-Text Screening:</strong> Screen articles based on PDF files or work with abstracts only</li>
+      <li><strong>Custom Fields:</strong> Define your own screening criteria with detailed instructions</li>
       <li><strong>LLM Evaluation:</strong> Compare LLM predictions against human labels with detailed metrics</li>
       <li><strong>Probability Thresholds:</strong> Adjust confidence thresholds for better accuracy</li>
     </ul>
@@ -288,27 +289,27 @@ export default function Manual() {
     <h4>Workflow</h4>
     <ol>
       <li>Configure your Settings with an OpenAI API key</li>
-      <li>Upload papers and configure fields in Extract Fields</li>
+      <li>Upload papers and configure fields in Screen Fields</li>
       <li>Monitor progress in Job Management</li>
       <li>Download results and evaluate in LLM Eval</li>
     </ol>
   </div>
 
   <div id="extract-fields" class="section page-break">
-    <h2>Extract Fields</h2>
-    <h3>Configure and start field extraction jobs</h3>
+    <h2>Screen Fields</h2>
+    <h3>Configure and start field screening jobs</h3>
     
     <h4>Purpose</h4>
     <p>
-      The Extract Fields page is where you configure and initiate extraction jobs. You'll upload your papers 
-      (as CSV), select which fields to extract, choose LLM models, and start the batch processing.
+      The Screen Fields page is where you configure and initiate screening jobs. You'll upload your papers 
+      (as CSV), select which fields to screen articles based on, choose LLM models, and start the batch processing.
     </p>
     
-    <h4>Extraction Mode</h4>
+    <h4>Screening Mode</h4>
     <div class="card">
       <div class="card-title">Title and Abstract Only</div>
       <p>
-        Extracts information using only the title and abstract from your CSV file. This is faster and 
+        Screens articles based on criteria using only the title and abstract from your CSV file. This is faster and 
         cheaper but may miss details only present in the full text.
       </p>
       <p><strong>When to use:</strong></p>
@@ -325,11 +326,11 @@ export default function Manual() {
         <strong>⚠️ Warning:</strong> Full text mode is experimental and not thoroughly tested. Use with caution.
       </p>
       <p>
-        Extracts information from the complete PDF text. Requires uploading PDF files that match your CSV entries.
+        Screens articles based on criteria from the complete PDF text. Requires uploading PDF files that match your CSV entries.
       </p>
       <p><strong>When to use:</strong></p>
       <ul>
-        <li>Detailed extraction needs</li>
+        <li>Detailed screening needs</li>
         <li>When abstract information is insufficient</li>
         <li>Final screening stages</li>
       </ul>
@@ -337,7 +338,7 @@ export default function Manual() {
     
     <h4>Model Selection</h4>
     <p>
-      Select one or more OpenAI models to run your extraction. The app supports multiple models, allowing 
+      Select one or more OpenAI models to run your screening. The app supports multiple models, allowing 
       you to compare results across different models in a single job.
     </p>
     <p><strong>Technical Details:</strong></p>
@@ -365,7 +366,7 @@ export default function Manual() {
     <h4>PDF Matching (Full Text Mode)</h4>
     <p>
       When using full text mode, upload PDF files that match your CSV entries. The system automatically 
-      matches PDFs to CSV rows using metadata extraction.
+      matches PDFs to CSV rows using metadata from PDFs.
     </p>
     <ul>
       <li>PDFs are processed using PDF.js to extract text and metadata</li>
@@ -374,21 +375,21 @@ export default function Manual() {
       <li>Only papers with successfully matched PDFs are processed</li>
     </ul>
     
-    <h4>Fields to Extract</h4>
+    <h4>Fields to Screen</h4>
     <p><strong>Default Fields:</strong></p>
     <ul>
-      <li><strong>Design:</strong> Extracts study design information</li>
-      <li><strong>Method:</strong> Extracts methodology details</li>
-      <li><strong>Justification:</strong> Provides brief justifications with quotes from the paper for each extracted field (enabled by default)</li>
+      <li><strong>Design:</strong> Screens articles based on study design information</li>
+      <li><strong>Method:</strong> Screens articles based on methodology details</li>
+      <li><strong>Justification:</strong> Provides brief justifications with quotes from the paper for each screened field (enabled by default)</li>
     </ul>
     
     <p><strong>Custom Fields:</strong></p>
     <p>
-      Create custom extraction fields with specific instructions. Each field can be:
+      Create custom screening fields with specific instructions. Each field can be:
     </p>
     <ul>
       <li><strong>Boolean:</strong> Yes/No/Maybe responses</li>
-      <li><strong>Text:</strong> Free-form text extraction</li>
+      <li><strong>Text:</strong> Free-form text screening</li>
     </ul>
     
     <p><strong>Field Configuration:</strong></p>
@@ -429,8 +430,8 @@ export default function Manual() {
     <h4>Purpose</h4>
     <p>
       The PDF Download page allows you to fetch and download PDF files for academic papers using their Digital 
-      Object Identifiers (DOIs). This is particularly useful when you need PDFs for full-text extraction in 
-      Extract Fields. The feature uses the OpenAlex API to find papers and check PDF availability.
+      Object Identifiers (DOIs). This is particularly useful when you need PDFs for full-text screening in
+      Screen Fields. The feature uses the OpenAlex API to find papers and check PDF availability.
     </p>
     
     <h4>How to Use</h4>
@@ -491,7 +492,7 @@ export default function Manual() {
     </p>
     
     <div class="highlight-box">
-      <p><strong>Example:</strong> If IDEAL Extract is running on <code>example.com</code> and tries to download a PDF from 
+      <p><strong>Example:</strong> If IDEAL Screen is running on <code>example.com</code> and tries to download a PDF from 
       <code>publisher.com</code>, the browser checks if <code>publisher.com</code> allows cross-origin 
       requests. If not, the browser blocks the request.</p>
     </div>
@@ -501,10 +502,10 @@ export default function Manual() {
     <ul>
       <li>Some publishers allow direct downloads (CORS enabled) → PDF downloads directly</li>
       <li>Some publishers block cross-origin requests (CORS restricted) → Direct download fails</li>
-      <li>This is a server-side security setting, not something IDEAL Extract can control</li>
+      <li>This is a server-side security setting, not something IDEAL Screen can control</li>
     </ul>
     
-    <p><strong>How IDEAL Extract Handles CORS:</strong></p>
+    <p><strong>How IDEAL Screen Handles CORS:</strong></p>
     <p>The app uses a smart fallback mechanism:</p>
     <ol>
       <li><strong>First attempt:</strong> Try to download the PDF directly by fetching it and creating 
@@ -535,19 +536,19 @@ export default function Manual() {
       <li><strong>Technical:</strong> Some servers simply don't configure CORS headers</li>
     </ul>
     <p>
-      This is normal web behavior and not a limitation of IDEAL Extract. Opening PDFs in a new tab is 
+      This is normal web behavior and not a limitation of IDEAL Screen. Opening PDFs in a new tab is 
       a standard workaround that works reliably across all browsers and publishers.
     </p>
     
-    <h4>Integration with Extract Fields</h4>
+    <h4>Integration with Screen Fields</h4>
     <p><strong>Typical Workflow:</strong></p>
     <ol>
       <li>Export DOIs from your CSV file (DOI column)</li>
       <li>Use PDF Download to fetch and download PDFs for those DOIs</li>
-      <li>Go to Extract Fields and upload your CSV</li>
-      <li>Select "Full Text" extraction mode</li>
+      <li>Go to Screen Fields and upload your CSV</li>
+      <li>Select "Full Text" screening mode</li>
       <li>Upload the downloaded PDFs</li>
-      <li>The system will match PDFs to CSV rows and extract full text</li>
+      <li>The system will match PDFs to CSV rows and screen articles based on full text</li>
     </ol>
   </div>
 
@@ -571,7 +572,7 @@ export default function Manual() {
       <li>Keys must start with "sk-"</li>
       <li>Key is validated by making a test API call</li>
       <li>Stored in browser localStorage (not sent to any server)</li>
-      <li>Required for all extraction jobs</li>
+      <li>Required for all screening jobs</li>
     </ul>
     
     <p><strong>Security:</strong></p>
@@ -602,11 +603,11 @@ export default function Manual() {
 
   <div id="job-management" class="section page-break">
     <h2>Job Management</h2>
-    <h3>Monitor and manage extraction jobs</h3>
+    <h3>Monitor and manage screening jobs</h3>
     
     <h4>Purpose</h4>
     <p>
-      The Job Management page shows all your extraction jobs, their status, progress, and allows you to 
+      The Job Management page shows all your screening jobs, their status, progress, and allows you to 
       download results and manage jobs.
     </p>
     
@@ -633,7 +634,7 @@ export default function Manual() {
     <p>Downloaded CSV files include:</p>
     <ul>
       <li>Original CSV columns</li>
-      <li>Extracted field columns (Design, Method, Custom fields)</li>
+      <li>Screened field columns (Design, Method, Custom fields)</li>
       <li>Probability columns (if log probabilities enabled)</li>
       <li>Justification columns (LLM reasoning for each field)</li>
       <li>Error information (for failed rows)</li>
@@ -646,14 +647,14 @@ export default function Manual() {
     
     <h4>Purpose</h4>
     <p>
-      The LLM Evaluation page allows you to compare LLM extraction results against human-annotated ground 
+      The LLM Evaluation page allows you to compare LLM screening results against human-annotated ground 
       truth data. It provides detailed metrics including confusion matrices, accuracy, precision, recall, 
       and F1 scores.
     </p>
     
     <h4>Getting Started</h4>
     <ol>
-      <li>Download your extraction results CSV from Job Management (file name should start with "extracted_fields")</li>
+      <li>Download your screening results CSV from Job Management (file name should start with "extracted_fields")</li>
       <li>Upload the CSV file</li>
       <li>Map human columns to LLM columns and configure value mappings</li>
       <li>Review metrics and moderate disagreements if needed</li>
@@ -759,22 +760,39 @@ export default function Manual() {
       <li>Batch is uploaded to OpenAI</li>
       <li>OpenAI processes requests asynchronously</li>
       <li>Results are downloaded and parsed</li>
-      <li>CSV is generated with extracted fields</li>
+      <li>CSV is generated with screening results</li>
     </ol>
     
     <h4>Key Concepts</h4>
     <ul>
       <li><strong>Batch API:</strong> OpenAI's asynchronous API that processes requests in batches, 
       typically completing within 24 hours. Much cheaper than real-time API calls.</li>
-      <li><strong>System Prompt:</strong> Instructions given to the LLM that define how to extract fields. 
+      <li><strong>System Prompt:</strong> Instructions given to the LLM that define how to screen articles based on criteria. 
       Combines all field instructions into a structured format.</li>
       <li><strong>User Prompt:</strong> The actual paper content (title, abstract, or full text) sent 
-      to the LLM for extraction.</li>
+      to the LLM for screening.</li>
       <li><strong>Log Probabilities:</strong> Model confidence scores for each token. Used to assess 
       prediction confidence.</li>
       <li><strong>Confusion Matrix:</strong> A table showing true positives, true negatives, false positives, 
       and false negatives for classification evaluation.</li>
     </ul>
+  </div>
+
+  <div id="about" class="section page-break">
+    <h2>About</h2>
+    
+    <p>IDEAL Screen is a tool for screening academic papers based on criteria using Large Language Models (LLMs). It is part of the IDEAL Tools suite, which was developed by researchers at the Development Economic Research Group at the World Bank Group as part of the IDEAL project.</p>
+
+    <h3>Credit and acknowledgments</h3>
+    
+    <h4>Conceptual Design</h4>
+    <p>Anja Sautmann, Adisiri Swain, Jonas Weinert</p>
+    
+    <h4>Software Development</h4>
+    <p>Shrenik Bodrik, Jonas Weinert</p>
+    
+    <h4>Testing and Refinement</h4>
+    <p>Anja Sautmann, Adisiri Swain, Jonas Weinert, Emanuel Herera</p>
   </div>
 </body>
 </html>`;
@@ -830,10 +848,10 @@ export default function Manual() {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <BookOpen className="h-8 w-8" />
-              IDEAL Extract User Manual
+              IDEAL Screen User Manual
             </h1>
             <p className="text-muted-foreground">
-              Comprehensive guide to using IDEAL Extract for academic paper field extraction and evaluation.
+              Comprehensive guide to using IDEAL Screen for academic paper field screening and evaluation.
             </p>
           </div>
           {/* <Button onClick={handleExportPDF} variant="outline" className="gap-2">
@@ -850,12 +868,13 @@ export default function Manual() {
         <CardContent>
           <nav className="space-y-2">
             <a href="#overview" onClick={(e) => { e.preventDefault(); scrollToSection('overview'); }} className="block text-blue-600 hover:underline cursor-pointer">Overview</a>
-            <a href="#extract-fields" onClick={(e) => { e.preventDefault(); scrollToSection('extract-fields'); }} className="block text-blue-600 hover:underline cursor-pointer">Extract Fields</a>
+            <a href="#extract-fields" onClick={(e) => { e.preventDefault(); scrollToSection('extract-fields'); }} className="block text-blue-600 hover:underline cursor-pointer">Screen Fields</a>
             <a href="#pdf-download" onClick={(e) => { e.preventDefault(); scrollToSection('pdf-download'); }} className="block text-blue-600 hover:underline cursor-pointer">PDF Download</a>
             <a href="#settings" onClick={(e) => { e.preventDefault(); scrollToSection('settings'); }} className="block text-blue-600 hover:underline cursor-pointer">Settings</a>
             <a href="#job-management" onClick={(e) => { e.preventDefault(); scrollToSection('job-management'); }} className="block text-blue-600 hover:underline cursor-pointer">Job Management</a>
             <a href="#llm-eval" onClick={(e) => { e.preventDefault(); scrollToSection('llm-eval'); }} className="block text-blue-600 hover:underline cursor-pointer">LLM Evaluation</a>
             <a href="#technical-details" onClick={(e) => { e.preventDefault(); scrollToSection('technical-details'); }} className="block text-blue-600 hover:underline cursor-pointer">Technical Details</a>
+            <a href="#about" onClick={(e) => { e.preventDefault(); scrollToSection('about'); }} className="block text-blue-600 hover:underline cursor-pointer">About</a>
           </nav>
         </CardContent>
       </Card>
@@ -865,14 +884,14 @@ export default function Manual() {
       <Card>
         <CardHeader>
           <CardTitle>Overview</CardTitle>
-          <CardDescription>Understanding IDEAL Extract</CardDescription>
+          <CardDescription>Understanding IDEAL Screen</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <h3 className="text-lg font-semibold mb-2">What is IDEAL Extract?</h3>
+            <h3 className="text-lg font-semibold mb-2">What is IDEAL Screen?</h3>
             <p>
-              IDEAL Extract is an AI-powered tool designed to extract structured information from academic papers 
-              using Large Language Models (LLMs). It automates the process of screening papers and extracting 
+              IDEAL Screen is an AI-powered tool designed to screen articles based on criteria from academic papers 
+              using Large Language Models (LLMs). It automates the process of screening papers and evaluating 
               specific fields like study design, methodology, and custom criteria.
             </p>
           </div>
@@ -880,9 +899,9 @@ export default function Manual() {
             <h3 className="text-lg font-semibold mb-2">Key Features</h3>
             <ul className="list-disc list-inside space-y-1 ml-4">
               <li><strong>Batch Processing:</strong> Process hundreds or thousands of papers using OpenAI's Batch API</li>
-              <li><strong>Multi-Model Support:</strong> Run the same extraction across multiple LLM models for comparison</li>
-              <li><strong>Full-Text Extraction:</strong> Extract from PDF files or work with abstracts only</li>
-              <li><strong>Custom Fields:</strong> Define your own extraction criteria with detailed instructions</li>
+              <li><strong>Multi-Model Support:</strong> Run the same screening across multiple LLM models for comparison</li>
+              <li><strong>Full-Text Screening:</strong> Screen articles based on PDF files or work with abstracts only</li>
+              <li><strong>Custom Fields:</strong> Define your own screening criteria with detailed instructions</li>
               <li><strong>LLM Evaluation:</strong> Compare LLM predictions against human labels with detailed metrics</li>
               <li><strong>Probability Thresholds:</strong> Adjust confidence thresholds for better accuracy</li>
             </ul>
@@ -891,7 +910,7 @@ export default function Manual() {
             <h3 className="text-lg font-semibold mb-2">Workflow</h3>
             <ol className="list-decimal list-inside space-y-1 ml-4">
               <li>Configure your <a href="/#/settings" onClick={(e) => handleNavClick(e, 'settings')} className="text-blue-600 hover:underline cursor-pointer">Settings</a> with an OpenAI API key</li>
-              <li>Upload papers and configure fields in <a href="/#/extract" onClick={(e) => handleNavClick(e, 'extract')} className="text-blue-600 hover:underline cursor-pointer">Extract Fields</a></li>
+              <li>Upload papers and configure fields in <a href="/#/extract" onClick={(e) => handleNavClick(e, 'extract')} className="text-blue-600 hover:underline cursor-pointer">Screen Fields</a></li>
               <li>Monitor progress in <a href="/#/job-management" onClick={(e) => handleNavClick(e, 'job-management')} className="text-blue-600 hover:underline cursor-pointer">Job Management</a></li>
               <li>Download results and evaluate in <a href="/#/llm-eval" onClick={(e) => handleNavClick(e, 'llm-eval')} className="text-blue-600 hover:underline cursor-pointer">LLM Eval</a></li>
             </ol>
@@ -905,27 +924,27 @@ export default function Manual() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Extract Fields
+            Screen Fields
           </CardTitle>
-          <CardDescription>Configure and start field extraction jobs</CardDescription>
+          <CardDescription>Configure and start field screening jobs</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
             <h3 className="text-lg font-semibold mb-2">Purpose</h3>
             <p>
-              The Extract Fields page is where you configure and initiate extraction jobs. You'll upload your papers 
-              (as CSV), select which fields to extract, choose LLM models, and start the batch processing.
+              The Screen Fields page is where you configure and initiate screening jobs. You'll upload your papers 
+              (as CSV), select which fields to screen articles based on, choose LLM models, and start the batch processing.
             </p>
           </div>
 
           <Accordion type="single" collapsible>
             <AccordionItem value="extraction-mode">
-              <AccordionTrigger>Extraction Mode</AccordionTrigger>
+              <AccordionTrigger>Screening Mode</AccordionTrigger>
               <AccordionContent className="space-y-3">
                 <div>
                   <h4 className="font-semibold mb-2">Title and Abstract Only</h4>
                   <p className="text-sm text-muted-foreground mb-2">
-                    Extracts information using only the title and abstract from your CSV file. This is faster and 
+                    Screens articles based on criteria using only the title and abstract from your CSV file. This is faster and 
                     cheaper but may miss details only present in the full text.
                   </p>
                   <p className="text-sm font-medium">When to use:</p>
@@ -939,11 +958,11 @@ export default function Manual() {
                 <div>
                   <h4 className="font-semibold mb-2">Full Text (Requires PDF download)</h4>
                   <p className="text-sm text-muted-foreground mb-2">
-                    Extracts information from the complete PDF text. Requires uploading PDF files that match your CSV entries.
+                    Screens articles based on criteria from the complete PDF text. Requires uploading PDF files that match your CSV entries.
                   </p>
                   <p className="text-sm font-medium">When to use:</p>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground">
-                    <li>Detailed extraction needs</li>
+                    <li>Detailed screening needs</li>
                     <li>When abstract information is insufficient</li>
                     <li>Final screening stages</li>
                   </ul>
@@ -955,7 +974,7 @@ export default function Manual() {
               <AccordionTrigger>Model Selection</AccordionTrigger>
               <AccordionContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Select one or more OpenAI models to run your extraction. The app supports multiple models, allowing 
+                  Select one or more OpenAI models to run your screening. The app supports multiple models, allowing 
                   you to compare results across different models in a single job.
                 </p>
                 <div>
@@ -997,7 +1016,7 @@ export default function Manual() {
                   <h4 className="font-semibold mb-2">PDF Matching (Full Text Mode)</h4>
                   <p className="text-sm text-muted-foreground mb-2">
                     When using full text mode, upload PDF files that match your CSV entries. The system automatically 
-                    matches PDFs to CSV rows using metadata extraction.
+                    matches PDFs to CSV rows using metadata from PDFs.
                   </p>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>PDFs are processed using PDF.js to extract text and metadata</li>
@@ -1010,23 +1029,23 @@ export default function Manual() {
             </AccordionItem>
 
             <AccordionItem value="fields-extraction">
-              <AccordionTrigger>Fields to Extract</AccordionTrigger>
+              <AccordionTrigger>Fields to Screen</AccordionTrigger>
               <AccordionContent className="space-y-4">
                 <div>
                   <h4 className="font-semibold mb-2">Default Fields</h4>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
-                    <li><strong>Design:</strong> Extracts study design information</li>
-                    <li><strong>Method:</strong> Extracts methodology details</li>
+                    <li><strong>Design:</strong> Screens articles based on study design information</li>
+                    <li><strong>Method:</strong> Screens articles based on methodology details</li>
                   </ul>
                 </div>
                 <div>
                   <h4 className="font-semibold mb-2">Custom Fields</h4>
                   <p className="text-sm text-muted-foreground mb-2">
-                    Create custom extraction fields with specific instructions. Each field can be:
+                    Create custom screening fields with specific instructions. Each field can be:
                   </p>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li><strong>Boolean:</strong> Yes/No/Maybe responses</li>
-                    <li><strong>Text:</strong> Free-form text extraction</li>
+                    <li><strong>Text:</strong> Free-form text screening</li>
                   </ul>
                 </div>
                 <div>
@@ -1040,7 +1059,7 @@ export default function Manual() {
                 <div>
                   <h4 className="font-semibold mb-2">System Prompt</h4>
                   <p className="text-sm text-muted-foreground">
-                    View and override the system prompt used for extraction. The system prompt combines all field 
+                    View and override the system prompt used for screening. The system prompt combines all field 
                     instructions into a structured format for the LLM.
                   </p>
                 </div>
@@ -1107,8 +1126,8 @@ export default function Manual() {
             <h3 className="text-lg font-semibold mb-2">Purpose</h3>
             <p>
               The PDF Download page allows you to fetch and download PDF files for academic papers using their Digital 
-              Object Identifiers (DOIs). This is particularly useful when you need PDFs for full-text extraction in 
-              Extract Fields. The feature uses the OpenAlex API to find papers and check PDF availability.
+      Object Identifiers (DOIs). This is particularly useful when you need PDFs for full-text screening in
+      Screen Fields. The feature uses the OpenAlex API to find papers and check PDF availability.
             </p>
           </div>
 
@@ -1246,7 +1265,7 @@ export default function Manual() {
                   <div className="bg-blue-50 dark:bg-blue-950 border-l-4 border-blue-500 p-3 mb-3">
                     <p className="text-sm font-medium mb-1">Example:</p>
                     <p className="text-sm text-muted-foreground">
-                      If IDEAL Extract is running on <code>example.com</code> and tries to download a PDF from 
+                      If IDEAL Screen is running on <code>example.com</code> and tries to download a PDF from 
                       <code>publisher.com</code>, the browser checks if <code>publisher.com</code> allows cross-origin 
                       requests. If not, the browser blocks the request.
                     </p>
@@ -1260,11 +1279,11 @@ export default function Manual() {
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>Some publishers allow direct downloads (CORS enabled) → PDF downloads directly</li>
                     <li>Some publishers block cross-origin requests (CORS restricted) → Direct download fails</li>
-                    <li>This is a server-side security setting, not something IDEAL Extract can control</li>
+                    <li>This is a server-side security setting, not something IDEAL Screen can control</li>
                   </ul>
                 </div>
                 <div>
-                  <h4 className="font-semibold mb-2">How IDEAL Extract Handles CORS</h4>
+                  <h4 className="font-semibold mb-2">How IDEAL Screen Handles CORS</h4>
                   <p className="text-sm text-muted-foreground mb-3">
                     The app uses a smart fallback mechanism:
                   </p>
@@ -1309,7 +1328,7 @@ export default function Manual() {
                     <li><strong>Technical:</strong> Some servers simply don't configure CORS headers</li>
                   </ul>
                   <p className="text-sm text-muted-foreground mt-2">
-                    This is normal web behavior and not a limitation of IDEAL Extract. Opening PDFs in a new tab is 
+                    This is normal web behavior and not a limitation of IDEAL Screen. Opening PDFs in a new tab is 
                     a standard workaround that works reliably across all browsers and publishers.
                   </p>
                 </div>
@@ -1317,7 +1336,7 @@ export default function Manual() {
                   <h4 className="font-semibold mb-2">Tips for PDF Downloads</h4>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>If a PDF opens in a new tab, use your browser's save function (Ctrl+S / Cmd+S) to save it</li>
-                    <li>Some browsers may block pop-ups - allow pop-ups for the IDEAL Extract site if needed</li>
+                    <li>Some browsers may block pop-ups - allow pop-ups for the IDEAL Screen site if needed</li>
                     <li>For bulk downloads, be patient - the app processes PDFs sequentially to avoid overwhelming your browser</li>
                     <li>If a PDF doesn't open, check if the URL requires authentication or subscription</li>
                   </ul>
@@ -1326,27 +1345,27 @@ export default function Manual() {
             </AccordionItem>
 
             <AccordionItem value="workflow-integration">
-              <AccordionTrigger>Integration with Extract Fields</AccordionTrigger>
+              <AccordionTrigger>Integration with Screen Fields</AccordionTrigger>
               <AccordionContent className="space-y-3">
                 <div>
                   <h4 className="font-semibold mb-2">Typical Workflow</h4>
                   <p className="text-sm text-muted-foreground mb-2">
-                    PDF Download is designed to work seamlessly with Extract Fields:
+                    PDF Download is designed to work seamlessly with Screen Fields:
                   </p>
                   <ol className="list-decimal list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>Export DOIs from your CSV file (DOI column)</li>
                     <li>Use PDF Download to fetch and download PDFs for those DOIs</li>
-                    <li>Go to Extract Fields and upload your CSV</li>
-                    <li>Select "Full Text" extraction mode</li>
+                    <li>Go to Screen Fields and upload your CSV</li>
+                    <li>Select "Full Text" screening mode</li>
                     <li>Upload the downloaded PDFs</li>
-                    <li>The system will match PDFs to CSV rows and extract full text</li>
+                    <li>The system will match PDFs to CSV rows and screen articles based on full text</li>
                   </ol>
                 </div>
                 <div>
                   <h4 className="font-semibold mb-2">Benefits</h4>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>Automatically finds PDFs using DOIs - no manual searching required</li>
-                    <li>Checks PDF availability before attempting extraction</li>
+                    <li>Checks PDF availability before attempting screening</li>
                     <li>Shows access status to understand PDF sources</li>
                     <li>Handles CORS restrictions automatically</li>
                     <li>Saves time when working with large paper collections</li>
@@ -1391,7 +1410,7 @@ export default function Manual() {
                     <li>Keys must start with "sk-"</li>
                     <li>Key is validated by making a test API call</li>
                     <li>Stored in browser localStorage (not sent to any server)</li>
-                    <li>Required for all extraction jobs</li>
+                    <li>Required for all screening jobs</li>
                   </ul>
                 </div>
                 <div>
@@ -1441,13 +1460,13 @@ export default function Manual() {
             <Database className="h-5 w-5" />
             Job Management
           </CardTitle>
-          <CardDescription>Monitor and manage extraction jobs</CardDescription>
+          <CardDescription>Monitor and manage screening jobs</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
             <h3 className="text-lg font-semibold mb-2">Purpose</h3>
             <p>
-              The Job Management page shows all your extraction jobs, their status, progress, and allows you to 
+              The Job Management page shows all your screening jobs, their status, progress, and allows you to 
               download results and manage jobs.
             </p>
           </div>
@@ -1495,7 +1514,7 @@ export default function Manual() {
                   </p>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>Original CSV columns</li>
-                    <li>Extracted field columns (Design, Method, Custom fields)</li>
+                    <li>Screened field columns (Design, Method, Custom fields)</li>
                     <li>Probability columns (if log probabilities enabled)</li>
                     <li>Justification columns (LLM reasoning for each field)</li>
                     <li>Error information (for failed rows)</li>
@@ -1568,7 +1587,7 @@ export default function Manual() {
           <div>
             <h3 className="text-lg font-semibold mb-2">Purpose</h3>
             <p>
-              The LLM Evaluation page allows you to compare LLM extraction results against human-annotated ground 
+              The LLM Evaluation page allows you to compare LLM screening results against human-annotated ground 
               truth data. It provides detailed metrics including confusion matrices, accuracy, precision, recall, 
               and F1 scores.
             </p>
@@ -1720,8 +1739,8 @@ export default function Manual() {
                   </p>
                   <ul className="list-disc list-inside ml-4 text-sm text-muted-foreground space-y-1">
                     <li>Evaluating models that don't output probabilities</li>
-                    <li>Comparing different extraction runs</li>
-                    <li>Evaluating custom fields that weren't part of the original extraction</li>
+                    <li>Comparing different screening runs</li>
+                    <li>Evaluating custom fields that weren't part of the original screening</li>
                   </ul>
                 </div>
 
@@ -2019,7 +2038,7 @@ export default function Manual() {
                     <li>Identify patterns in errors (e.g., certain types of papers consistently misclassified)</li>
                   </ul>
                   <p className="text-sm text-muted-foreground mt-2">
-                    <strong>Tip:</strong> Review FP and FN cases to understand model weaknesses and improve your extraction 
+                    <strong>Tip:</strong> Review FP and FN cases to understand model weaknesses and improve your screening 
                     prompts or thresholds.
                   </p>
                 </div>
@@ -2258,7 +2277,7 @@ export default function Manual() {
               <li>Batch is uploaded to OpenAI</li>
               <li>OpenAI processes requests asynchronously</li>
               <li>Results are downloaded and parsed</li>
-              <li>CSV is generated with extracted fields</li>
+              <li>CSV is generated with screening results</li>
             </ol>
           </div>
           <div>
@@ -2266,15 +2285,49 @@ export default function Manual() {
             <ul className="list-disc list-inside ml-4 text-muted-foreground space-y-2">
               <li><strong>Batch API:</strong> OpenAI's asynchronous API that processes requests in batches, 
               typically completing within 24 hours. Much cheaper than real-time API calls.</li>
-              <li><strong>System Prompt:</strong> Instructions given to the LLM that define how to extract fields. 
+              <li><strong>System Prompt:</strong> Instructions given to the LLM that define how to screen articles based on criteria. 
               Combines all field instructions into a structured format.</li>
               <li><strong>User Prompt:</strong> The actual paper content (title, abstract, or full text) sent 
-              to the LLM for extraction.</li>
+              to the LLM for screening.</li>
               <li><strong>Log Probabilities:</strong> Model confidence scores for each token. Used to assess 
               prediction confidence.</li>
               <li><strong>Confusion Matrix:</strong> A table showing true positives, true negatives, false positives, 
               and false negatives for classification evaluation.</li>
             </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Separator id="about" />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>About</CardTitle>
+          <CardDescription>Credits and acknowledgments</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="text-muted-foreground mb-4">
+              IDEAL Screen is a tool for screening academic papers based on criteria using Large Language Models (LLMs). It is part of the IDEAL Tools suite, which was developed by researchers at the Development Economic Research Group at the World Bank Group as part of the IDEAL project.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-2">Conceptual Design</h3>
+            <p className="text-muted-foreground">
+              Anja Sautmann, Adisiri Swain, Jonas Weinert
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-2">Software Development</h3>
+            <p className="text-muted-foreground">
+              Shrenik Bodrik, Jonas Weinert
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-2">Testing and Refinement</h3>
+            <p className="text-muted-foreground">
+              Anja Sautmann, Adisiri Swain, Jonas Weinert, Emanuel Herera
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -2296,7 +2349,7 @@ export default function Manual() {
             <div>
               <h4 className="font-semibold text-sm mb-2">GitHub Repository</h4>
               <p className="text-sm text-muted-foreground mb-2">
-                IDEAL Extract is open source and available on GitHub:
+                IDEAL Screen is open source and available on GitHub:
               </p>
               <a 
                 href="https://github.com/IDEAL-consortium/ideal-extract" 
