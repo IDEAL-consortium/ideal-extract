@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { toast } from "sonner";
 import { HelpText } from "./help-text";
 import { useNavigate } from "react-router-dom";
+import LlmEvalFeedbackModal from "./llm-eval-feedback-modal";
 
 type CriterionKey = string;
 
@@ -276,6 +277,7 @@ export default function LlmEval() {
   const [modelName, setModelName] = useState<string>("");
   const [uploadedFilename, setUploadedFilename] = useState<string>("");
   const [moderationDecisions, setModerationDecisions] = useState<ModerationDecisions>({});
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
 
   // Auto-save moderation decisions to localStorage whenever they change
   useEffect(() => {
@@ -675,6 +677,12 @@ export default function LlmEval() {
     savePersistedMapping(header, llmPairs, mapping, filtersByCriterion, moderationDecisions);
     setIsMappingOpen(false);
     setMappingConfirmed(true);
+    // Show feedback modal after confirming mapping
+    setFeedbackModalOpen(true);
+  }
+
+  function handleFeedbackComplete() {
+    setFeedbackModalOpen(false);
   }
 
   function handleAddManualColumn() {
@@ -1075,8 +1083,23 @@ export default function LlmEval() {
     return `hsl(${hue} ${sat}% ${light}%)`;
   }
 
+  // Compute eval info for feedback modal
+  const evalInfo = useMemo(() => {
+    const includedCriteria = llmPairs.filter(p => mapping[p.id]?.include);
+    return {
+      criteriaCount: includedCriteria.length,
+      criteriaNames: includedCriteria.map(p => p.display),
+      modelName: modelName || undefined,
+    };
+  }, [llmPairs, mapping, modelName]);
+
   return (
     <div className="p-4 space-y-6">
+      <LlmEvalFeedbackModal
+        open={feedbackModalOpen}
+        onComplete={handleFeedbackComplete}
+        evalInfo={evalInfo}
+      />
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-[95vw] p-0">
           <DialogHeader className="p-4">
@@ -1354,7 +1377,7 @@ export default function LlmEval() {
             Upload a CSV with human truth in separate columns for each evaluated label and LLM outputs with optional log probs.
           </CardDescription>
           <HelpText 
-            text="Compare LLM extraction results against human labels. LLM columns ending with ' Probability' are automatically detected. You'll map human columns to LLM columns and configure value mappings."
+            text="Compare LLM screening results against human labels. LLM columns ending with ' Probability' are automatically detected. You'll map human columns to LLM columns and configure value mappings."
             linkTo="/#/manual#llm-eval"
             linkText="Learn more about LLM evaluation"
             className="mt-2"
@@ -1365,7 +1388,7 @@ export default function LlmEval() {
             <h4 className="font-semibold text-sm">Getting Started</h4>
             <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
               <li>
-                Download your extraction results CSV from <a href="/#/job-management" onClick={(e) => { e.preventDefault(); navigate('/job-management'); }} className="text-blue-600 hover:underline cursor-pointer">Job Management</a> 
+                Download your screening results CSV from <a href="/#/job-management" onClick={(e) => { e.preventDefault(); navigate('/job-management'); }} className="text-blue-600 hover:underline cursor-pointer">Job Management</a> 
                 {" "}(file name should start with "extracted_fields")
               </li>
               <li>Upload the CSV file below</li>
@@ -1381,6 +1404,59 @@ export default function LlmEval() {
                 if (f) handleFile(f);
               }} />
             </div>
+            {window.location.hostname === "localhost" && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Dev Testing</Label>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    // Create mock data for testing the feedback modal
+                    const mockHeader = ["title", "abstract", "IC1", "IC1 Probability", "IC2", "IC2 Probability", "Human_IC1", "Human_IC2"];
+                    const mockRows: Row[] = [
+                      { title: "Paper 1", abstract: "Abstract 1", IC1: "yes", "IC1 Probability": "0.95", IC2: "no", "IC2 Probability": "0.88", Human_IC1: "include", Human_IC2: "exclude" },
+                      { title: "Paper 2", abstract: "Abstract 2", IC1: "no", "IC1 Probability": "0.72", IC2: "yes", "IC2 Probability": "0.91", Human_IC1: "exclude", Human_IC2: "include" },
+                      { title: "Paper 3", abstract: "Abstract 3", IC1: "maybe", "IC1 Probability": "0.55", IC2: "yes", "IC2 Probability": "0.85", Human_IC1: "include", Human_IC2: "include" },
+                    ];
+                    const mockPairs: LlmPair[] = [
+                      { id: "IC1", labelCol: "IC1", probCol: "IC1 Probability", display: "Inclusion Criteria 1" },
+                      { id: "IC2", labelCol: "IC2", probCol: "IC2 Probability", display: "Inclusion Criteria 2" },
+                    ];
+                    const mockMapping: Mapping = {
+                      IC1: { 
+                        include: true, 
+                        humanColumn: "Human_IC1", 
+                        humanValueMap: { include: "include", exclude: "exclude" },
+                        llmValueMap: { yes: "include", no: "exclude", maybe: "include" }
+                      },
+                      IC2: { 
+                        include: true, 
+                        humanColumn: "Human_IC2", 
+                        humanValueMap: { include: "include", exclude: "exclude" },
+                        llmValueMap: { yes: "include", no: "exclude", maybe: "include" }
+                      },
+                    };
+                    
+                    setRows(mockRows);
+                    setHeader(mockHeader);
+                    setLlmPairs(mockPairs);
+                    setMapping(mockMapping);
+                    setModelName("gpt-4.1-mini (mock)");
+                    setUploadedFilename("mock_test_data.csv");
+                    setThresholds({
+                      IC1: { yesMaybeMinProb: 0.5, noMinProb: 0.5 },
+                      IC2: { yesMaybeMinProb: 0.5, noMinProb: 0.5 },
+                    });
+                    setSelectedCriteria({ IC1: true, IC2: true });
+                    setMappingConfirmed(true);
+                    setFeedbackModalOpen(true);
+                    toast.success("Mock data loaded - feedback modal opened");
+                  }}
+                >
+                  Test Feedback Modal
+                </Button>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="rname">Report name</Label>
               <Input id="rname" placeholder="LLM Eval Report" value={reportName} onChange={(e) => setReportName(e.target.value)} className="min-w-[220px]" />

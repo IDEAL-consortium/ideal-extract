@@ -1,8 +1,8 @@
-# IDEAL Extraction Tool
+# IDEAL Screening Tool
 
 ## Overview
 
-The IDEAL extraction tools support two modes of operation: **Full Text** and **Title & Abstract**. This tool is designed to help you extract structured information from research papers efficiently.
+The IDEAL screening tools support two modes of operation: **Full Text** and **Title & Abstract**. This tool is designed to help you screen articles based on criteria efficiently.
 
 ---
 
