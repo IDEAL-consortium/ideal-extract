@@ -217,7 +217,7 @@ export default function PdfDownload() {
       <div className="space-y-2">
         <h1 className="text-3xl font-bold">PDF Download</h1>
         <p className="text-muted-foreground">
-          Download PDF files for full-text extraction using DOIs via OpenAlex
+          Download PDF files for full-text screening using DOIs via OpenAlex
         </p>
       </div>
 
@@ -227,7 +227,7 @@ export default function PdfDownload() {
           <li>Enter DOIs individually below and click "Fetch" to check availability</li>
           <li>Or use the bulk import option to fetch multiple DOIs at once</li>
           <li>Download PDFs individually or all at once using the download buttons</li>
-          <li>After download, use these PDFs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Extract Fields</a> for full-text extraction</li>
+          <li>After download, use these PDFs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Screen Fields</a> for full-text screening</li>
           <li>Note: Some PDFs may not be available due to access restrictions</li>
         </ol>
       </div>

@@ -7,16 +7,16 @@ const basePath = import.meta.env.BASE_URL === "/" ? "" : import.meta.env.BASE_UR
 
 const routesMetadata = [
   {
-    title: "Extract Fields",
+    title: "Screen Fields",
     url: `${basePath}/#/extract`,
     icon: FileText,
-    description: "Upload and extract fields from papers",
+    description: "Upload and screen articles based on criteria",
   },
   {
     title: "Job Management",
     url: `${basePath}/#/job-management`,
     icon: Settings,
-    description: "Manage extraction jobs and progress",
+    description: "Manage screening jobs and progress",
   },
   {
     title: "LLM Eval",
@@ -28,7 +28,7 @@ const routesMetadata = [
     title: "PDF Download",
     icon: Download,
     url: `${basePath}/#/download`,
-    description: "Download PDFs for full-text extraction",
+    description: "Download PDFs for full-text screening",
   },
   {
     title: "Settings",

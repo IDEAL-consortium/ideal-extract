@@ -81,7 +81,7 @@ const SettingsPage: React.FC = () => {
           <li>Enter your API key below (must start with "sk-")</li>
           <li>Click "Save" to validate and store the key</li>
           <li>Optionally enable Log Probabilities for confidence scores (GPT-4.1 models only)</li>
-          <li>Once configured, you can start extraction jobs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Extract Fields</a></li>
+          <li>Once configured, you can start screening jobs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Screen Fields</a></li>
         </ol>
       </div>
       <div className="space-y-6">

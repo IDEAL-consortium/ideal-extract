@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { deleteJob, getAllJobs, getJob } from "@/lib/job-manager";
+import { deleteJob, getAllJobs, getJob, createJob } from "@/lib/job-manager";
 import { downloadCSV } from "@/lib/csv-utils";
 import { processBatch } from "@/lib/batch-processor";
 import type { Job } from "@/types";
@@ -13,12 +13,63 @@ import { cancelBatch } from "@/lib/openai-service";
 import { downloadCustomFields } from "@/hooks/use-custom-fields";
 import { HelpText } from "./help-text";
 import { useNavigate } from "react-router-dom";
+import FeedbackModal from "./feedback-modal";
 
 export default function JobManagement() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingStatus, setCheckingStatus] = useState<Set<number>>(new Set());
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<{
+    jobId: number;
+    batchId?: string;
+    model?: string;
+    onlyProcessed: boolean;
+  } | null>(null);
+
+  // Add fake job for testing on localhost
+  useEffect(() => {
+    const addFakeJobForTesting = async () => {
+      if (window.location.hostname === "localhost") {
+        const existingJobs = await getAllJobs();
+        const hasFakeJob = existingJobs.some(j => j.filename === "test_papers.csv" && j.batchId === "fake_batch_123");
+        if (!hasFakeJob) {
+          await createJob({
+            filename: "test_papers.csv",
+            mode: "abstract",
+            fields: {
+              design: true,
+              method: true,
+              custom: [
+                { name: "Has Control Group", instruction: "Does the study include a control group?", type: "boolean" },
+                { name: "Sample Size", instruction: "What is the sample size of the study?", type: "text" },
+              ],
+            },
+            status: "completed",
+            progress: 25,
+            total: 25,
+            created: new Date(),
+            updated: new Date(),
+            batchId: "fake_batch_123",
+            batches: [{
+              model: "gpt-4.1-mini",
+              batchId: "fake_batch_123",
+              status: "completed",
+              completed: 25,
+              total: 25,
+              output_file_id: "fake_output_123"
+            }],
+            options: {
+              model: "gpt-4.1-mini",
+              models: ["gpt-4.1-mini"],
+            }
+          });
+        }
+      }
+    };
+    addFakeJobForTesting();
+  }, []);
 
   useEffect(() => {
     loadJobs();
@@ -80,6 +131,16 @@ export default function JobManagement() {
   };
 
   const handleDownload = async (jobId: number, onlyProcessed: boolean) => {
+    // Open feedback modal before download
+    setPendingDownload({ jobId, onlyProcessed });
+    setFeedbackModalOpen(true);
+  };
+
+  const executeDownload = async () => {
+    if (!pendingDownload) return;
+    
+    const { jobId, onlyProcessed } = pendingDownload;
+    
     try {
       const job = await getJob(jobId);
       if (!job) {
@@ -101,6 +162,17 @@ export default function JobManagement() {
       } else {
         toast.error(`Failed to download results: ${errorMessage}`);
       }
+    } finally {
+      setPendingDownload(null);
+    }
+  };
+
+  const handleFeedbackComplete = () => {
+    setFeedbackModalOpen(false);
+    if (pendingDownload?.model) {
+      executeDownloadBatch();
+    } else {
+      executeDownload();
     }
   };
 
@@ -145,10 +217,20 @@ export default function JobManagement() {
   }
 
   if (jobs.length === 0) {
-    return <div className="text-center py-4">No extraction jobs found</div>;
+    return <div className="text-center py-4">No screening jobs found</div>;
   }
 
   const handleDownloadBatch = async (jobId: number, batchId: string, model: string, onlyProcessed: boolean) => {
+    // Open feedback modal before download
+    setPendingDownload({ jobId, batchId, model, onlyProcessed });
+    setFeedbackModalOpen(true);
+  };
+
+  const executeDownloadBatch = async () => {
+    if (!pendingDownload || !pendingDownload.model) return;
+    
+    const { jobId, model, onlyProcessed } = pendingDownload;
+    
     try {
       const job = await getJob(jobId);
       if (!job) {
@@ -170,15 +252,22 @@ export default function JobManagement() {
       } else {
         toast.error(`Failed to download results for ${model}: ${errorMessage}`);
       }
+    } finally {
+      setPendingDownload(null);
     }
   };
 
   return (
     <div className="space-y-4">
+      <FeedbackModal
+        open={feedbackModalOpen}
+        onComplete={handleFeedbackComplete}
+        jobId={pendingDownload?.jobId || 0}
+      />
       <div className="mb-4">
         <h1 className="text-2xl font-bold mb-2">Job Management</h1>
         <HelpText 
-          text="Monitor extraction jobs, check status, and download results. Jobs automatically refresh every 5 seconds when active. Each model in a multi-model job has its own batch with separate progress."
+          text="Monitor screening jobs, check status, and download results. Jobs automatically refresh every 5 seconds when active. Each model in a multi-model job has its own batch with separate progress."
           linkTo="/#/manual#job-management"
           linkText="Learn more about job management"
         />
@@ -186,7 +275,7 @@ export default function JobManagement() {
       <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2 mb-4">
         <h4 className="font-semibold text-sm">Getting Started</h4>
         <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
-          <li>Create extraction jobs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Extract Fields</a></li>
+          <li>Create screening jobs in <a href="/#/extract" onClick={(e) => { e.preventDefault(); navigate('/extract'); }} className="text-blue-600 hover:underline cursor-pointer">Screen Fields</a></li>
           <li>Jobs appear here automatically and refresh every 5 seconds</li>
           <li>Monitor progress: Validating → In Progress → Finalizing → Completed</li>
           <li>When completed, download results CSV (file name starts with "extracted_fields")</li>
