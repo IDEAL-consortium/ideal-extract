@@ -264,9 +264,26 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
 
   // Merge original CSV data with extraction results
   console.log("🔄 [CSV Export] Merging original CSV data with extraction results...");
+  
+  // Check if original CSV has an 'id' column (case-insensitive) that might have been used in batch creation
+  // This handles backward compatibility with jobs created before the fix where CSV's id column was used
+  const firstRow = originalCsvData[0] || {};
+  const hasIdColumn = Object.keys(firstRow).some(key => key.toLowerCase() === 'id');
+  const idColumnKey = hasIdColumn ? Object.keys(firstRow).find(key => key.toLowerCase() === 'id') : null;
+  
+  console.log("🔍 [CSV Export] ID column detection:", { hasIdColumn, idColumnKey });
+  
   const originalDataWithIds = originalCsvData.map((row, index) => {
-    // Use the row index as paper ID (assuming papers were processed in order)
-    const paperId = index + 1 ; // Assuming paper IDs start from 1
+    // If the CSV has an 'id' column that was likely used in batch creation (for backward compatibility),
+    // try to use that. Otherwise use sequential index-based IDs.
+    let paperId: number;
+    if (idColumnKey && row[idColumnKey]) {
+      const csvId = Number(row[idColumnKey]);
+      // Use CSV's id if it's a valid number, otherwise fall back to index
+      paperId = !isNaN(csvId) ? csvId : index + 1;
+    } else {
+      paperId = index + 1;
+    }
     return { ...row, id: paperId };
   });
   console.log("📋 [CSV Export] Original data with IDs", {
@@ -296,8 +313,8 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
   }
   console.log("🔀 [CSV Export] Starting data merge process...");
   const mergedData = dataToMerge.map((originalRow, index) => {
-    // Use the row index as paper ID (assuming papers were processed in order)
-    const paperId = index+1;
+    // Use the row's assigned ID (which handles both new sequential IDs and legacy CSV IDs)
+    const paperId = originalRow.id;
     const extracted = extractionMap.get(paperId);
     
     if (index === 0) {

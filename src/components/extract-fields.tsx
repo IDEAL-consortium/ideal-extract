@@ -397,7 +397,9 @@ export default function ExtractFields() {
           normalizedRow[key.toLowerCase()] = row[key] || "";
         });
 
-        return {id : index+1, ...normalizedRow} as PaperWithFields
+        // IMPORTANT: id must come AFTER spread to ensure sequential IDs (1, 2, 3...)
+        // regardless of any 'id' column in the original CSV
+        return {...normalizedRow, id: index + 1} as PaperWithFields
       }) as PaperWithFields[];
 
       const job = await createJob({
