@@ -295,7 +295,7 @@ export async function downloadCSV(jobId: number, onlyProcessed?: boolean): Promi
     } else {
       paperId = index + 1;
     }
-    return { ...row, id: paperId };
+    return { ...row, id: String(paperId)};
   });
   console.log("📋 [CSV Export] Original data with IDs", {
     totalRows: originalDataWithIds.length,
